@@ -8,7 +8,7 @@ command -v node >/dev/null || exit 77
 [[ -f $WASM ]] || { echo "no $WASM (run wasm/build.sh)"; exit 77; }
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 node "$SRC/tests/wasm_render.mjs" --make-input "$T/in.wav"
-for look in kepler luna fluent fluent_metal fluent_silk fluent_water fluent_halo fluent_velvet fluent_space fluent_glass kitt hal gargantua; do
+for look in kepler luna fluent fluent_metal fluent_silk fluent_water fluent_halo fluent_velvet fluent_space fluent_glass kitt hal gargantua gargantua_organ gargantua_cathedral gargantua_choir gargantua_horizon gargantua_tesseract; do
   "$FA_RENDER" "$SRC/presets/looks.yaml" "$look" "$T/in.wav" "$T/native_$look.wav" --no-trim --tail 1
   node "$SRC/tests/wasm_render.mjs" "$WASM" "$SRC/wasm/dist/looks.pack.yaml" "$look" "$T/in.wav" "$T/native_$look.wav"
 done

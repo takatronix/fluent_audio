@@ -5,7 +5,7 @@ schema: fluent.sound/v1alpha1
 name: gargantua_cathedral
 extends: voice_base
 io: { in: mono, out: stereo }
-trim_db: 0
+trim_db: 1.9        # loudness matched to the dry voice (fa_render --loudness)
 budget: { flops_per_sample: 1000 }
 chain:
   - eq: { bands: [ { type: lowshelf, f: 140, gain_db: 2 },

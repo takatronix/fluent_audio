@@ -44,7 +44,7 @@ public:
         {"release_s", "s", 0.2f, 8, 2.5f, Smooth::kFixed, "time the pipes take to fall 60 dB after the voice stops"},
         {"tone_hz", "Hz", 500, 12000, 3000, Smooth::kLog, "low-pass on the organ (darker below)"},
         {"spread", "", 0, 1, 0.6f, Smooth::kLinear, "stereo spread of the keys"},
-        {"level", "", 0, 2, 0.3f, Smooth::kLinear, "organ level relative to the voice's RMS"},
+        {"level", "", 0, 4, 1, Smooth::kLinear, "organ level relative to the voice's RMS (1 ≈ -15 dB under it)"},
     };
     static constexpr int kCost = 400;
     static int outChannels(int) { return 2; }
@@ -53,7 +53,7 @@ public:
 
     void prepare(Prepare& pr) override {
         gate_.setup(pr.sample_rate, -30, 150);
-        a_rms_ = static_cast<float>(dsp::poleMs(300, pr.sample_rate));
+        a_rms_ = static_cast<float>(dsp::poleMs(1000, pr.sample_rate));   // slow: the organ must not pump with syllables
         a_att_ = static_cast<float>(dsp::poleMs(p(kSwell), pr.sample_rate));
         a_rel_ = static_cast<float>(dsp::poleMs(p(kRelease) * 1000.0 / 6.9078, pr.sample_rate));   // T60 = 6.9 τ
         sustain_ = static_cast<int>(p(kSustain) * pr.sample_rate);

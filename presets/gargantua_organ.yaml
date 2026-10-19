@@ -5,7 +5,7 @@ schema: fluent.sound/v1alpha1
 name: gargantua_organ
 extends: voice_base
 io: { in: mono, out: stereo }
-trim_db: 0
+trim_db: 1.6        # loudness matched to the dry voice (fa_render --loudness)
 budget: { flops_per_sample: 1000 }   # the organ (~400) and two long reverbs
 chain:
   - eq: { bands: [ { type: lowshelf, f: 140, gain_db: 2 },
@@ -16,8 +16,8 @@ chain:
   - choir: { voices: 4, cents: 7, delay_ms: 12, drift: 0.3, tone_hz: 6000, spread: 0.7, mix: 0.2 }
 buses:
   organ:
-    - organ: { chords: cycle, r16: 0.7, r8: 1, r4: 0.5, quint: 0.15, r2: 0.2, swell_ms: 800, sustain_s: 0.5,
-               release_s: 3.5, tone_hz: 3000, spread: 0.7, level: 1.4 }
+    - organ: { chords: cycle, r16: 0.7, r8: 1, r4: 0.7, quint: 0.2, r2: 0.3, swell_ms: 800, sustain_s: 0.5,
+               release_s: 3.5, tone_hz: 3200, spread: 0.8, level: 2.2 }
     - reverb: { decay_s: 7, size: 2.3, damp_hz: 2500, predelay_ms: 30, diffusion: 0.8, mod: 0.5, mix: 0.6 }
   hall:
     - eq: { bands: [ { type: hp, f: 180, q: 0.7 } ] }

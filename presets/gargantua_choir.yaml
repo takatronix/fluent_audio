@@ -5,19 +5,19 @@ schema: fluent.sound/v1alpha1
 name: gargantua_choir
 extends: voice_base
 io: { in: mono, out: stereo }
-trim_db: 0
+trim_db: 0.6        # loudness matched to the dry voice (fa_render --loudness)
 budget: { flops_per_sample: 1000 }
 chain:
   - eq: { bands: [ { type: lowshelf, f: 140, gain_db: 1.5 },
                    { type: peak, f: 2800, q: 1.0, gain_db: 1.5 },
                    { type: highshelf, f: 9000, gain_db: -1.5 } ] }
   - send: { to: organ, gain: 1 }
-  - send: { to: hall, gain: 0.16 }
+  - send: { to: hall, gain: 0.18 }
   - choir: { voices: 8, cents: 12, delay_ms: 22, drift: 0.4, tone_hz: 5000, spread: 1, mix: 0.5 }
 buses:
   organ:
     - organ: { chords: drone, r16: 0.8, r8: 0.6, r4: 0.2, quint: 0, r2: 0, swell_ms: 1000, sustain_s: 0.4,
-               release_s: 3.5, tone_hz: 1800, spread: 0.5, level: 1.0 }
+               release_s: 4.5, tone_hz: 1800, spread: 0.6, level: 1.5 }
     - reverb: { decay_s: 6, size: 2.2, damp_hz: 2200, predelay_ms: 30, diffusion: 0.8, mod: 0.5, mix: 0.5 }
   hall:
     - eq: { bands: [ { type: hp, f: 200, q: 0.7 } ] }
