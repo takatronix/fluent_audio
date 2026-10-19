@@ -3,7 +3,7 @@
 schema: fluent.sound/v1alpha1
 bank: kepler_looks
 presets: [ kepler, luna, fluent, fluent_metal, kitt, hal, gargantua ]
-aliases: { system: kepler, comic: kepler, liquid: fluent_metal, aurora: fluent }
+aliases: { system: kepler, comic: kepler, liquid: fluent_metal, aurora: fluent, clean: luna }   # clean: levelling + limiter only
 crossfade: { duration: 0.3, ease: ease_in_out }
 master:
   - limiter: { ceiling_db: -1 }   # one safety limiter after the bank sum; presets' own limiters are dropped inside a bank

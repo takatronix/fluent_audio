@@ -2,7 +2,8 @@
 // no SharedArrayBuffer, no Emscripten glue, no fetch / TextDecoder here (some browsers lack them in worklets).
 //
 // processorOptions: { module: WebAssembly.Module (compiled on the main thread) | bytes: ArrayBuffer,
-//                     yaml: Uint8Array (UTF-8, NUL not needed), maxBlock?: number }
+//                     yaml: Uint8Array (UTF-8, NUL not needed), maxBlock?: number,
+//                     preset?: Uint8Array (UTF-8 name: the look to start with, no crossfade) }
 // port in:  {select: idx} {param: idx, value} {bypass: 0|1} {reset: true}
 // port out: {type: "ready", presets, aliases, params, digest, latency, memory} | {type: "error", message}
 //           {type: "a", a: [frame, voice, level, peak, onset, centroid, tail]}  ~60 Hz
@@ -19,7 +20,7 @@ class FluentAudioProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (ev) => this.onMessage(ev.data);
     try {
       let mod = o.module;
-      if (!(mod instanceof WebAssembly.Module)) mod = new WebAssembly.Module(o.bytes);
+      if (!(mod instanceof WebAssembly.Module)) mod = new WebAssembly.Module(o.bytes);   // sync compile, once
       const stub = () => 52;   // ENOSYS: the core never does I/O; these only exist for libc's stderr
       const imports = {};
       for (const im of WebAssembly.Module.imports(mod)) {
@@ -36,6 +37,14 @@ class FluentAudioProcessor extends AudioWorkletProcessor {
       this.fa = ex.fa_create(p, sampleRate, this.maxBlock);
       ex.free(p);
       if (!this.fa) throw new Error("fa_create: " + this.str(ex.fa_error()));
+      if (o.preset && o.preset.length) {   // before the first sample: instant
+        const q = ex.malloc(o.preset.length + 1);
+        const m8 = new Uint8Array(ex.memory.buffer);
+        m8.set(o.preset, q);
+        m8[q + o.preset.length] = 0;
+        ex.fa_select(this.fa, q);
+        ex.free(q);
+      }
       // memory never grows (16 MB fixed), so these views stay valid
       const buf = ex.memory.buffer;
       this.in0 = new Float32Array(buf, ex.fa_in_buffer(this.fa, 0), this.maxBlock);

@@ -6,6 +6,7 @@
 //   fx.set("amount", 0.5);        // any param name (fx.params lists them)
 //   fx.analysis                   // { frame, voice, level, peak, onset, centroid, tail }, updated ~60 Hz
 //   fx.onerror = e => ...         // the worklet failed: reconnect your dry path
+// opts: { base, wasmUrl, workletUrl, timeout (ms), preset (the look to start with, no crossfade) }
 //
 // The wasm is compiled here on the main thread and handed to the worklet as a WebAssembly.Module (no compile on
 // the audio thread); if the browser cannot clone a Module into the worklet, the bytes go instead. create()
@@ -108,11 +109,12 @@
       channelCount: 1, channelCountMode: "explicit", channelInterpretation: "speakers",   // the voice: mono in
       processorOptions: po,
     });
+    const preset = opts.preset ? utf8(opts.preset) : null;
     let node;
-    try {
-      node = new AudioWorkletNode(ctx, "fluent-audio", nodeOpts({ module, yaml: y, maxBlock: 1024 }));
-    } catch (e) {   // the Module could not be cloned into the worklet: send the bytes
-      node = new AudioWorkletNode(ctx, "fluent-audio", nodeOpts({ bytes, yaml: y, maxBlock: 1024 }));
+    try {   // the Module (no compile on the audio thread) and the bytes in case the Module arrives unusable
+      node = new AudioWorkletNode(ctx, "fluent-audio", nodeOpts({ module, bytes, yaml: y, maxBlock: 1024, preset }));
+    } catch (e) {   // the Module could not be cloned into the worklet: the bytes only
+      node = new AudioWorkletNode(ctx, "fluent-audio", nodeOpts({ bytes, yaml: y, maxBlock: 1024, preset }));
     }
     const ready = await new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error("worklet timeout")), opts.timeout || 5000);
@@ -122,7 +124,9 @@
       };
       node.onprocessorerror = () => { clearTimeout(t); reject(new Error("processorerror")); };
     });
-    return new Instance(node, ready);
+    const inst = new Instance(node, ready);
+    if (opts.preset) inst._current = inst.presetIndex(opts.preset);
+    return inst;
   }
 
   g.FluentAudio = { create, version: "0.1.0" };

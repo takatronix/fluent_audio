@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>fluent_audio — browser check</title>
+<!-- Renders a WAV through the real AudioWorklet (OfflineAudioContext, 48 kHz) for each look and compares every
+     sample's bits with the native render. Driven by tests/browser_check.py; open by hand to see the result. -->
+<script src="fluent-audio.js"></script>
+<pre id="log"></pre>
+<script>
+const log = (s) => { document.getElementById("log").textContent += s + "\n"; };
+function readWav(buf) {
+  const dv = new DataView(buf); let pos = 12, ch = 1, data = 0, len = 0;
+  while (pos + 8 <= buf.byteLength) {
+    const id = String.fromCharCode(dv.getUint8(pos), dv.getUint8(pos + 1), dv.getUint8(pos + 2), dv.getUint8(pos + 3));
+    const sz = dv.getUint32(pos + 4, true);
+    if (id === "fmt ") ch = dv.getUint16(pos + 10, true);
+    if (id === "data") { data = pos + 8; len = sz; break; }
+    pos += 8 + sz + (sz & 1);
+  }
+  const n = len / 4 / ch, out = [];
+  for (let c = 0; c < ch; c++) out.push(new Float32Array(n));
+  for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) out[c][i] = dv.getFloat32(data + (i * ch + c) * 4, true);
+  return out;
+}
+async function check(look, yaml, input) {
+  const sr = 48000, n = input.length + sr;   // + 1 s tail, as fa_render --tail 1 --no-trim
+  const ctx = new OfflineAudioContext(2, n, sr);
+  const fx = await FluentAudio.create(ctx, yaml, { preset: look });
+  const buf = ctx.createBuffer(1, input.length, sr);
+  buf.copyToChannel(input, 0);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(fx.node);
+  fx.node.connect(ctx.destination);
+  src.start(0);
+  const t0 = performance.now();
+  const out = await ctx.startRendering();
+  const ms = performance.now() - t0;
+  const nat = readWav(await (await fetch("native_" + look + ".wav")).arrayBuffer());
+  let diff = 0, first = -1;
+  for (let c = 0; c < 2; c++) {
+    const a = new Uint32Array(out.getChannelData(c).buffer.slice(0)), b = new Uint32Array(nat[c].buffer);
+    for (let i = 0; i < n; i++) if (a[i] !== b[i]) { diff++; if (first < 0) first = i; }
+  }
+  const usPerQuantum = ms * 1000 / (n / 128);
+  return { look, ok: diff === 0, diff, first, usPerQuantum, digest: fx.digest, latency: fx.latency };
+}
+(async () => {
+  const results = [];
+  try {
+    const yaml = await (await fetch("looks.pack.yaml")).text();
+    const input = readWav(await (await fetch("in.wav")).arrayBuffer())[0];
+    for (const look of (new URLSearchParams(location.search).get("looks") || "kepler,fluent").split(",")) {
+      const r = await check(look, yaml, input);
+      results.push(r);
+      log(`${look}: ${r.ok ? "bit-identical" : r.diff + " samples differ (first " + r.first + ")"}  ` +
+          `${r.usPerQuantum.toFixed(1)} µs / 128 frames (offline, whole graph)  latency ${r.latency}`);
+    }
+  } catch (e) { results.push({ error: String(e && e.stack || e) }); log("ERROR " + e); }
+  window.__results = results;
+})();
+</script>
