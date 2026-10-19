@@ -24,7 +24,8 @@ extern const int kBuiltinMacroCount;
 
 namespace {
 
-constexpr int kMaxNodes = 64, kMaxBuses = 8, kMaxParams = 64, kMaxDepth = 2, kMaxMacroDepth = 4, kBudget = 600;
+constexpr int kMaxNodes = 64, kMaxBuses = 8, kMaxParams = 64, kMaxDepth = 2, kMaxMacroDepth = 4, kBudget = 600,
+              kMaxBudget = 2000;
 constexpr size_t kMaxYaml = 256 * 1024;   // a pack holds all looks; one Sound stays far below the 64 KB of §5.1
 
 struct Origin {
@@ -285,6 +286,7 @@ private:
         std::vector<std::pair<std::string, Entry>> params;
         std::string io_in = "mono";
         double trim_db = 0;
+        double budget = kBudget;   // budget: { flops_per_sample: N } (design §5.1), not inherited
     };
 
     bool flatten(const YamlNode& d, const std::string& file, int depth, Flat& out) {
@@ -303,6 +305,7 @@ private:
             out.base_count = out.has_parent ? out.base_count : static_cast<int>(out.chain.size());
             out.has_parent = true;
             out.trim_db = 0;
+            out.budget = kBudget;
         }
         if (const YamlNode* io = d.find("io")) {
             if (const YamlNode* i = io->find("in")) {
@@ -343,6 +346,11 @@ private:
         if (const YamlNode* t = d.find("trim_db")) {
             if (!parseNumber(t->scalar, out.trim_db) || out.trim_db < -24 || out.trim_db > 24)
                 return err(file, t->span.begin_line, "trim_db: -24..24");
+        }
+        if (const YamlNode* b = d.find("budget")) {
+            const YamlNode* f = b->find("flops_per_sample");
+            if (!f || !parseNumber(f->scalar, out.budget) || out.budget < 1 || out.budget > kMaxBudget)
+                return err(file, b->span.begin_line, "budget: { flops_per_sample: 1..2000 }");
         }
         return true;
     }
@@ -729,8 +737,9 @@ private:
             if (eng_->bank_ && e.node->isMapping() && e.node->entries.size() == 1 && e.node->entries[0].key == "limiter") continue;
             if (!addEntry(p.master, mch, *e.node, e.file, ctx, "", cnt, 0, Where::kMaster)) return false;
         }
-        if (p.cost > kBudget)
-            return err(file, 1, "preset '" + name + "' costs ~" + std::to_string(p.cost) + " ops/sample (budget 600)");
+        if (p.cost > flat.budget)
+            return err(file, 1, "preset '" + name + "' costs ~" + std::to_string(p.cost) + " ops/sample (budget " +
+                                    std::to_string(static_cast<int>(flat.budget)) + ")");
 
         Arena& a = eng_->arena_;
         p.buf[0] = a.alloc<float>(kControlRate);

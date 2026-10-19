@@ -1,0 +1,25 @@
+# gargantua (cathedral) — full organ: one A-minor chord on every rank (16' to 2', the twelfth too) swells slowly
+# under the voice like Zimmer's held organ, a six-voice choir around it, and an 8 s cathedral that keeps ringing
+# after the last word. The grandest and loudest organ; the words stay in front. Dry not delayed.
+schema: fluent.sound/v1alpha1
+name: gargantua_cathedral
+extends: voice_base
+io: { in: mono, out: stereo }
+trim_db: 0
+budget: { flops_per_sample: 1000 }
+chain:
+  - eq: { bands: [ { type: lowshelf, f: 140, gain_db: 2 },
+                   { type: peak, f: 2800, q: 1.0, gain_db: 2 },
+                   { type: highshelf, f: 9000, gain_db: -1 } ] }
+  - send: { to: organ, gain: 1 }
+  - send: { to: hall, gain: 0.18 }
+  - choir: { voices: 6, cents: 9, delay_ms: 16, drift: 0.35, tone_hz: 5500, spread: 0.9, mix: 0.28 }
+buses:
+  organ:
+    - organ: { chords: minor, r16: 1, r8: 1, r4: 0.8, quint: 0.35, r2: 0.45, celeste: 5, swell_ms: 1200,
+               sustain_s: 0.8, release_s: 5, tone_hz: 4500, spread: 0.9, level: 1.3 }
+    - reverb: { decay_s: 8, size: 2.5, damp_hz: 3000, predelay_ms: 40, diffusion: 0.85, mod: 0.6, mix: 0.65 }
+  hall:
+    - eq: { bands: [ { type: hp, f: 180, q: 0.7 } ] }
+    - reverb: { decay_s: 8, size: 2.5, damp_hz: 2800, predelay_ms: 70, diffusion: 0.85, mod: 0.6 }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

@@ -177,3 +177,95 @@ FA_TEST(nodes, "phaser: depth 0 is the dry; depth 1 with a parked sweep cuts a n
     for (size_t i = 24000; i < 48000; ++i) { si += x[i] * x[i]; so += y[2 * i] * y[2 * i]; }
     CHECK(10 * std::log10(so / si) < -30) << 10 * std::log10(so / si);
 }
+
+namespace {
+// Energy of y (interleaved stereo, left) at `hz` over [a, b) seconds — a single-bin DFT.
+double binDb(const std::vector<float>& y, double hz, double a, double b, int ch = 0) {
+    double re = 0, im = 0;
+    const size_t i0 = static_cast<size_t>(a * 48000), i1 = static_cast<size_t>(b * 48000);
+    for (size_t i = i0; i < i1; ++i) {
+        const double ph = 2 * 3.14159265358979 * hz * static_cast<double>(i) / 48000;
+        re += y[2 * i + ch] * std::cos(ph);
+        im += y[2 * i + ch] * std::sin(ph);
+    }
+    return 10 * std::log10((re * re + im * im) / static_cast<double>((i1 - i0) * (i1 - i0)) + 1e-30);
+}
+// Tone bursts of `hz` at [start, end) seconds.
+std::vector<float> bursts(double seconds, double hz, std::initializer_list<std::pair<double, double>> spans) {
+    std::vector<float> x(static_cast<size_t>(seconds * 48000), 0.0f);
+    for (auto [a, b] : spans)
+        for (size_t i = static_cast<size_t>(a * 48000); i < static_cast<size_t>(b * 48000); ++i)
+            x[i] = 0.3f * dsp::sinTurns(static_cast<float>(hz * static_cast<double>(i) / 48000.0));
+    return x;
+}
+}  // namespace
+
+FA_TEST(nodes, "organ: silent until a voice; plays A2/A1 under it; cycle moves to F after a pause; dies after") {
+    auto e = fa_test::make("schema: fluent.sound/v1alpha1\nname: q\nchain:\n"
+                           "  - organ: { chords: cycle, release_s: 1, sustain_s: 0.2, quint: 0, r2: 0 }\n");
+    const auto x = bursts(8, 1000, {{0.5, 1.5}, {2.0, 3.0}});
+    const auto y = fa_test::render(*e, x, 128);
+    float before = 0;
+    for (size_t i = 0; i < 24000; ++i) before = std::max(before, std::fabs(y[2 * i]));
+    CHECK(before == 0.0f) << before;
+    const double a2 = binDb(y, 110, 1.0, 1.5), f2 = binDb(y, 87.307, 1.0, 1.5);
+    CHECK(a2 > -50 && a2 - f2 > 20) << a2 << " " << f2;                         // Am: A2, no F2
+    const double f2b = binDb(y, 87.307, 2.5, 3.0), a1b = binDb(y, 55, 2.5, 3.0);
+    CHECK(f2b > -50 && f2b - a1b > 15) << f2b << " " << a1b;                    // F: F2 rings, the 16' A1 has gone
+    float late = 0;
+    for (size_t i = 7 * 48000; i < 8 * 48000; ++i) late = std::max(late, std::fabs(y[2 * i]));
+    CHECK(late == 0.0f) << late;
+}
+
+FA_TEST(nodes, "choir: mix 0 is the dry, undelayed; the copies are spread (L ≠ R)") {
+    const auto x = fa_test::testSignal(48000, 1.0);
+    auto d = fa_test::make("schema: fluent.sound/v1alpha1\nname: q\nchain:\n  - choir: { mix: 0 }\n");
+    const auto y0 = fa_test::render(*d, x, 128);
+    bool same = true;
+    for (size_t i = 0; i < x.size(); ++i) same = same && y0[2 * i] == x[i] && y0[2 * i + 1] == x[i];
+    CHECK(same);
+    auto e = fa_test::make("schema: fluent.sound/v1alpha1\nname: q\nchain:\n  - choir: { mix: 1, dry: 0 }\n");
+    const auto y = fa_test::render(*e, x, 128);
+    double m = 0, s = 0;
+    for (size_t i = 0; i < x.size(); ++i) {
+        m += (y[2 * i] + y[2 * i + 1]) * (y[2 * i] + y[2 * i + 1]);
+        s += (y[2 * i] - y[2 * i + 1]) * (y[2 * i] - y[2 * i + 1]);
+    }
+    CHECK(m > 0 && s / m > 0.05) << s / m;
+}
+
+FA_TEST(nodes, "subharmonic: a 200 Hz tone gets a 100 Hz partner; amount 0 is the dry") {
+    const auto x = bursts(1, 200, {{0, 1}});
+    auto d = fa_test::make("schema: fluent.sound/v1alpha1\nname: q\nchain:\n  - subharmonic: { amount: 0 }\n");
+    const auto y0 = fa_test::render(*d, x, 128);
+    bool same = true;
+    for (size_t i = 0; i < x.size(); ++i) same = same && y0[2 * i] == x[i];
+    CHECK(same);
+    auto e = fa_test::make("schema: fluent.sound/v1alpha1\nname: q\nchain:\n  - subharmonic: { amount: 1, lp_hz: 140 }\n");
+    const auto y = fa_test::render(*e, x, 128);
+    const double sub = binDb(y, 100, 0.3, 1.0), tone = binDb(y, 200, 0.3, 1.0), q = binDb(y, 50, 0.3, 1.0);
+    CHECK(sub > tone - 20 && sub - q > 20) << sub << " " << tone << " " << q;
+}
+
+FA_TEST(nodes, "dilate: silent while the voice sounds; after it, the last stretch hangs, sinking; then 0") {
+    auto e = fa_test::make("schema: fluent.sound/v1alpha1\nname: q\nchain:\n"
+                           "  - dilate: { decay_s: 2, glide_st: -12, level: 1 }\n");
+    const auto x = bursts(8, 440, {{0.2, 1.2}});
+    const auto y = fa_test::render(*e, x, 128);
+    float during = 0;
+    for (size_t i = 0; i < static_cast<size_t>(1.2 * 48000); ++i) during = std::max(during, std::fabs(y[2 * i]));
+    CHECK(during == 0.0f) << during;
+    auto zc = [&](double a, double b) {   // zero crossings per second
+        int n = 0;
+        for (size_t i = static_cast<size_t>(a * 48000); i < static_cast<size_t>(b * 48000); ++i) n += (y[2 * i - 2] <= 0) != (y[2 * i] <= 0);
+        return n / 2.0 / (b - a);
+    };
+    double ms = 0;
+    for (size_t i = static_cast<size_t>(1.7 * 48000); i < static_cast<size_t>(1.9 * 48000); ++i) ms += y[2 * i] * y[2 * i];
+    CHECK(std::sqrt(ms / 9600) > 0.03) << std::sqrt(ms / 9600);               // the tone hangs on
+    const double z0 = zc(1.7, 1.9), z1 = zc(2.7, 2.9);
+    CHECK(z0 > 380 && z0 < 445 && z1 < 0.8 * z0) << z0 << " " << z1;           // and sinks
+    float end = 0;
+    for (size_t i = 7 * 48000; i < 8 * 48000; ++i) end = std::max(end, std::fabs(y[2 * i]));
+    CHECK(end == 0.0f) << end;
+}

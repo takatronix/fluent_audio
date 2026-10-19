@@ -45,12 +45,14 @@ FA_TEST(core, "every look compiles; aliases resolve; latency 0") {
     auto e = make(looks());
     CHECK(e != nullptr);
     if (!e) return;
-    CHECK(e->presetCount() == 13);
+    CHECK(e->presetCount() == 20);
     CHECK(e->presetIndex("system") == e->presetIndex("kepler"));
     CHECK(e->presetIndex("comic") == e->presetIndex("kepler"));
     CHECK(e->presetIndex("liquid") == e->presetIndex("fluent_metal"));
     CHECK(e->latencySamples() == 0);
-    CHECK(e->memoryBytes() < 4u * 1024 * 1024) << e->memoryBytes();
+    // the whole bank at 48 kHz; the wasm heap is a fixed 16 MB (design §3.6). Candidate looks (gargantua_*,
+    // fluent_*) make it grow until the owner picks — drop the unpicked ones rather than raising this further.
+    CHECK(e->memoryBytes() < 8u * 1024 * 1024) << e->memoryBytes();
     CHECK(e->paramIndex("amount") >= 0);
     CHECK(e->paramIndex("fluent.shimmer1.semitones") >= 0);
     CHECK(e->paramIndex("kepler.eq2.bands.1.gain_db") >= 0);
@@ -201,7 +203,7 @@ FA_TEST(core, "C API round trip") {
     CHECK(fa_set_param_f32(f, "amount", 0.7f) == 1);
     CHECK(std::fabs(fa_get_param_f32(f, "amount") - 0.7f) < 1e-6f);
     CHECK(fa_param_index(f, "kepler.reverb1.decay_s") >= 0);
-    CHECK(fa_preset_count(f) == 13);
+    CHECK(fa_preset_count(f) == 20);
     for (int i = 0; i < 128; ++i) fa_in_buffer(f, 0)[i] = 0.1f;
     CHECK(fa_process(f, 128) == 1);
     CHECK(fa_analysis(f)->version == 1);

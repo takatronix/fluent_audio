@@ -184,6 +184,43 @@ struct Ramp {
     float at(int pos) const { return a + (b - a) * (static_cast<float>(pos + 1) * (1.0f / 32.0f)); }
 };
 
+// Is someone speaking? A fast envelope (5 ms up, 60 ms down) against a slowly falling peak (4 s): on above
+// peak·rel (and an absolute floor), off after `hold` samples below — so the gaps inside a word do not count.
+// Relative, so a send gain or a quiet voice does not move it. `phrase` is true for the one sample where the
+// voice comes back after >= 100 ms below the threshold (a sentence break in TTS: ~0.3 s of silence), even if
+// the hold kept the gate open. Used by the voice-following textures.
+struct SpeechGate {
+    float env = 0, peak = 0;
+    float a_up = 0, a_dn = 0, a_pk = 0, rel = 0.03f, floor = 1e-4f;
+    int hold = 0, below = 0, quiet = 0, min_quiet = 4800;
+    bool on = false, phrase = false;
+    void setup(double sr, double rel_db, double hold_ms) {
+        a_up = static_cast<float>(poleMs(5, sr));
+        a_dn = static_cast<float>(poleMs(60, sr));
+        a_pk = static_cast<float>(poleMs(4000, sr));
+        rel = static_cast<float>(db2lin(rel_db));
+        hold = static_cast<int>(hold_ms * sr * 0.001);
+        min_quiet = static_cast<int>(0.1 * sr);
+    }
+    void reset() { env = peak = 0; below = 0; quiet = 0; on = false; phrase = false; }
+    bool run(float x) {
+        const float ax = x < 0 ? -x : x;
+        env = flush(ax + (ax > env ? a_up : a_dn) * (env - ax));
+        peak = env > peak ? env : flush(peak * a_pk);
+        if (env > peak * rel && env > floor) {
+            phrase = !on || quiet >= min_quiet;
+            on = true;
+            below = 0;
+            quiet = 0;
+        } else {
+            phrase = false;
+            if (quiet < min_quiet) ++quiet;
+            if (on && ++below > hold) on = false;
+        }
+        return on;
+    }
+};
+
 // ---------------------------------------------------------------- RNG (xorshift32, fixed seed)
 struct Rng {
     uint32_t s = 0x9E3779B9u;

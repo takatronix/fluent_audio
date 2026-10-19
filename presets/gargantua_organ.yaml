@@ -1,0 +1,25 @@
+# gargantua (organ) — Interstellar's church organ under the voice: a chord swells in on 16'/8'/4' while it speaks
+# (Am → F → C → G, one chord per phrase), is held a moment after the last word and dies away into a cathedral;
+# a light four-voice choir and a long dark hall around the words, kept low so they stay clear. Dry not delayed.
+schema: fluent.sound/v1alpha1
+name: gargantua_organ
+extends: voice_base
+io: { in: mono, out: stereo }
+trim_db: 0
+budget: { flops_per_sample: 1000 }   # the organ (~400) and two long reverbs
+chain:
+  - eq: { bands: [ { type: lowshelf, f: 140, gain_db: 2 },
+                   { type: peak, f: 2800, q: 1.0, gain_db: 1.5 },
+                   { type: highshelf, f: 9000, gain_db: -1.5 } ] }
+  - send: { to: organ, gain: 1 }
+  - send: { to: hall, gain: 0.14 }
+  - choir: { voices: 4, cents: 7, delay_ms: 12, drift: 0.3, tone_hz: 6000, spread: 0.7, mix: 0.2 }
+buses:
+  organ:
+    - organ: { chords: cycle, r16: 0.7, r8: 1, r4: 0.5, quint: 0.15, r2: 0.2, swell_ms: 800, sustain_s: 0.5,
+               release_s: 3.5, tone_hz: 3000, spread: 0.7, level: 1.4 }
+    - reverb: { decay_s: 7, size: 2.3, damp_hz: 2500, predelay_ms: 30, diffusion: 0.8, mod: 0.5, mix: 0.6 }
+  hall:
+    - eq: { bands: [ { type: hp, f: 180, q: 0.7 } ] }
+    - reverb: { decay_s: 6, size: 2.3, damp_hz: 3000, predelay_ms: 60, diffusion: 0.8, mod: 0.5 }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }
