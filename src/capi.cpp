@@ -10,7 +10,6 @@ using fluent_audio::Engine;
 struct FaInstance {
     std::unique_ptr<Engine> eng;
     std::string str;   // storage for returned strings
-    FaAnalysis an{};
 };
 
 namespace {
@@ -91,10 +90,9 @@ int fa_bypass(FaInstance* f, int on) { return f && f->eng->bypass(on != 0) ? 1 :
 void fa_reset(FaInstance* f) { if (f) f->eng->reset(); }
 
 const FaAnalysis* fa_analysis(FaInstance* f) {
-    if (!f) return nullptr;
+    // the engine's live struct (same layout): the worklet reads it straight from wasm memory after each block
     static_assert(sizeof(FaAnalysis) == sizeof(fluent_audio::Analysis), "layout");
-    std::memcpy(&f->an, &f->eng->analysis(), sizeof(FaAnalysis));
-    return &f->an;
+    return f ? reinterpret_cast<const FaAnalysis*>(&f->eng->analysis()) : nullptr;
 }
 int fa_diagnostics_count(FaInstance* f) { return f ? f->eng->diagnosticsCount() : 0; }
 const char* fa_diagnostics(FaInstance* f) {
