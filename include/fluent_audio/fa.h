@@ -16,10 +16,6 @@
 
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
 #define FA_API EMSCRIPTEN_KEEPALIVE
@@ -27,6 +23,10 @@ extern "C" {
 #define FA_API __declspec(dllexport)
 #else
 #define FA_API __attribute__((visibility("default")))
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 typedef struct FaInstance FaInstance;
@@ -71,6 +71,9 @@ FA_API int fa_select(FaInstance*, const char* preset);
 FA_API int fa_preset_index(FaInstance*, const char* preset); /* aliases resolve */
 FA_API int fa_preset_count(FaInstance*);
 FA_API const char* fa_preset_name(FaInstance*, int index);
+FA_API int fa_alias_count(FaInstance*);                                            /* look → preset aliases */
+FA_API const char* fa_alias_name(FaInstance*, int index);
+FA_API int fa_alias_preset(FaInstance*, int index);
 FA_API int fa_select_idx(FaInstance*, int index);                                  /* RT safe */
 FA_API int fa_select_at(FaInstance*, int index, uint64_t frame);
 FA_API int fa_current_preset(FaInstance*);

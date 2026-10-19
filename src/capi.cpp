@@ -81,6 +81,9 @@ int fa_preset_count(FaInstance* f) { return f ? f->eng->presetCount() : 0; }
 const char* fa_preset_name(FaInstance* f, int i) {
     return f && i >= 0 && i < f->eng->presetCount() ? f->eng->presetName(i).c_str() : nullptr;
 }
+int fa_alias_count(FaInstance* f) { return f ? f->eng->aliasCount() : 0; }
+const char* fa_alias_name(FaInstance* f, int i) { return f && i >= 0 && i < f->eng->aliasCount() ? f->eng->alias(i).first.c_str() : nullptr; }
+int fa_alias_preset(FaInstance* f, int i) { return f && i >= 0 && i < f->eng->aliasCount() ? f->eng->alias(i).second : -1; }
 int fa_select_idx(FaInstance* f, int i) { return f && f->eng->selectIdx(i) ? 1 : 0; }
 int fa_select_at(FaInstance* f, int i, uint64_t frame) { return f && f->eng->selectIdxAt(i, frame) ? 1 : 0; }
 int fa_current_preset(FaInstance* f) { return f ? f->eng->current() : -1; }

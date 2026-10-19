@@ -96,6 +96,8 @@ public:
     int presetIndex(const std::string& name) const;   // aliases resolve here
     int presetCount() const;
     const std::string& presetName(int i) const;
+    int aliasCount() const { return static_cast<int>(aliases_.size()); }
+    const std::pair<std::string, int>& alias(int i) const { return aliases_[i]; }
     bool select(const std::string& name);
     bool selectIdx(int idx);
     bool selectIdxAt(int idx, uint64_t frame);

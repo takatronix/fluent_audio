@@ -208,6 +208,10 @@ private:
     }
 
     bool readFile(const std::string& path, std::string& out) {
+#ifdef __EMSCRIPTEN__
+        (void)path; (void)out;
+        return false;   // the browser build has no files: everything comes in the pack (library:)
+#else
         FILE* f = std::fopen(path.c_str(), "rb");
         if (!f) return false;
         char buf[8192];
@@ -216,6 +220,7 @@ private:
         while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
         std::fclose(f);
         return true;
+#endif
     }
 
     const YamlNode* findDoc(const std::string& name, std::string& file) {
