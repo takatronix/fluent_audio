@@ -2,4 +2,4 @@
 schema: fluent.sound/v1alpha1
 name: case_flanger
 chain:
-  - flanger: { amount: 0.3 }
+  - flanger: { mix: 0.3 }
