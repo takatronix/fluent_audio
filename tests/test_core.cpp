@@ -45,7 +45,7 @@ FA_TEST(core, "every look compiles; aliases resolve; latency 0") {
     auto e = make(looks());
     CHECK(e != nullptr);
     if (!e) return;
-    CHECK(e->presetCount() == 7);
+    CHECK(e->presetCount() == 13);
     CHECK(e->presetIndex("system") == e->presetIndex("kepler"));
     CHECK(e->presetIndex("comic") == e->presetIndex("kepler"));
     CHECK(e->presetIndex("liquid") == e->presetIndex("fluent_metal"));
@@ -201,7 +201,7 @@ FA_TEST(core, "C API round trip") {
     CHECK(fa_set_param_f32(f, "amount", 0.7f) == 1);
     CHECK(std::fabs(fa_get_param_f32(f, "amount") - 0.7f) < 1e-6f);
     CHECK(fa_param_index(f, "kepler.reverb1.decay_s") >= 0);
-    CHECK(fa_preset_count(f) == 7);
+    CHECK(fa_preset_count(f) == 13);
     for (int i = 0; i < 128; ++i) fa_in_buffer(f, 0)[i] = 0.1f;
     CHECK(fa_process(f, 128) == 1);
     CHECK(fa_analysis(f)->version == 1);
