@@ -7,12 +7,16 @@ extends: voice_base
 io: { in: mono, out: stereo }
 trim_db: -0.2
 chain:
+  # (2026-10-20: 「さーーー っていう」 — the hiss was the voice's own sibilants and breath, lifted by two compressors and
+  # an air shelf, then doubled by microshift and smeared by the hall: so no shelf, a gentler compressor without makeup,
+  # a firmer de-esser, and a soft top roll-off)
   - eq: { bands: [ { type: lowshelf, f: 220, gain_db: 1 },
                    { type: peak, f: 3600, q: 1.2, gain_db: -1.5 },
-                   { type: highshelf, f: 10000, gain_db: 1 } ] }
-  - compressor: { threshold_db: -20, ratio: 1.8, attack_ms: 20, release_ms: 200, knee_db: 8, makeup_db: 1 }
+                   { type: lp, f: 11000, q: 0.7 } ] }
+  - deesser: { freq: 6000, threshold_db: -40, ratio: 5 }
+  - compressor: { threshold_db: -20, ratio: 1.4, attack_ms: 20, release_ms: 200, knee_db: 8, makeup_db: 0 }
   - send: { to: hall, gain: 0.16 }
-  - microshift: { cents: 7, delay_ms: 12, mix: 0.2 }
+  - microshift: { cents: 7, delay_ms: 12, mix: 0.15 }
   - widen: { width: 1.2, bass_mono_hz: 200 }
 buses:
   hall:
