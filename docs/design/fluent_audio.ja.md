@@ -27,13 +27,13 @@
 |---|---|---|
 | D1 | **C++17 の単一コア**、依存ゼロ（YAML パーサは fluent_scene の自作パーサを流用） | native / wasm / Python で「同じ音」を保証できるのは同じコードだけ |
 | D2 | ブラウザでは **wasm を AudioWorklet の中で直接動かす**（SharedArrayBuffer 不要の方式） | ネットワーク 0・端末ごと・look の live param に追従・Safari / Tesla でも動く |
-| D3 | **既定のアルゴリズム遅延 0 サンプル**。look-ahead は既定オフ | 「遅くならない」。声の dry 経路に遅延を持つノードを置かない |
-| D4 | ブロック 128、**制御レート 32 サンプル（絶対サンプル番号で刻む）** | ホストの呼び出し単位が変わっても出力がビット一致（チャンク不変） |
+| D3 | **追加のアルゴリズム遅延は既定 0 サンプル**。look-ahead は既定オフ | 「遅くならない」。声の dry 経路にバッファ遅延を持つノードを置かない（端末・ブラウザ自身の出力遅延は別勘定で、実測して記録する） |
+| D4 | ブロック 128、**制御レート 32 サンプル（絶対サンプル番号で刻む）**、param 変更は**サンプル時刻付きのイベント** | ホストの呼び出し単位が変わっても出力がビット一致（チャンク不変） |
 | D5 | 宣言は **Sound YAML**（`schema: fluent.sound/v1alpha1`）: chain + sends(buses) + master、`$params` と `animate` | fluent_scene と同じ書き味。AI が安全に書け、実行中に param だけ動かせる |
 | D6 | **look ごとのプリセットは全部ロード時に構築**し、切替は 300 ms のクロスフェード | 実行中のメモリ確保ゼロ。look 切替でブツッといわない |
 | D7 | DSP は **全部自前実装**（MIT）。参照するのは MIT / BSD / PD のアルゴリズムと論文だけ | 小さい・決定的・ライセンスが綺麗。必要量はノード 15 個程度で自作の範囲 |
 | D8 | 数学関数（sin / tanh / exp / log）も**自前の近似**、`-ffp-contract=off`、fast-math 禁止 | native と wasm でビット一致させるため（libm は環境で違う） |
-| D9 | 解析（level / RMS / onset / 重心 / tail）を**グラフの出口で計算**して顔に渡す | 今の AnalyserNode の level 計測を置き換え、効果後の「実際に鳴っている音」で顔が動く |
+| D9 | 解析をグラフの中で計算して顔に渡す: **口は声そのもの（効果前）の包絡**、光・きらめきは**出口の音**（level / 重心）、別に残響中フラグ `tail` | 今の AnalyserNode を置き換える。口がリバーブの尾でパクパクしない |
 | D10 | テストは fluent_scene と同じ **golden 契約**: オフラインレンダ → golden WAV、native↔wasm 一致 | 「同じ音」を機械で守る |
 
 ---
@@ -111,21 +111,33 @@ param と、事前に構築済みのプリセット間の切替（D6）だけ。
 - wasm は **Emscripten の「Wasm Audio Worklets」API は使わない**。あれは SharedArrayBuffer
   （= COOP/COEP の cross-origin isolation）が必須で、Kepler のページは Cloudflare 越しの
   埋め込み iframe・外部画像を多用しており isolation を掛けると壊れる。
-- 代わりに: メインスレッドで `fluent_audio.wasm` を fetch → `ArrayBuffer` を
-  `AudioWorkletNode` の `processorOptions` で渡す → worklet の constructor で
-  `new WebAssembly.Module(bytes)` + `new WebAssembly.Instance(...)`（同期。小さいので数 ms）。
-  ビルドは `-sSTANDALONE_WASM`、libc 最小、`TextDecoder` / `fetch` に依存しない
-  （AudioWorkletGlobalScope には無いブラウザがある）。文字列は UTF-8 バイト列で受け渡す。
-- param とプリセット切替は `port.postMessage` → worklet 側で受けて **事前解決した
-  param 番号**で `fa_set_param_idx()` を呼ぶ（名前の文字列検索を音声スレッドで毎回しない）。
-- 解析値は worklet から `port.postMessage` で **4 ブロックごと（48 kHz で 10.7 ms、約 94 Hz）**に
-  小さな Float32Array を送る（transfer しない固定長コピー。GC を出さないよう配列は使い回す）。
-  cross-origin isolated なページなら SAB のリングに切り替えられるよう API は抽象化しておく。
+- 代わりに: **メインスレッドで** `WebAssembly.compileStreaming` して得た `WebAssembly.Module` を
+  `AudioWorkletNode` の `processorOptions` で渡し、worklet の constructor では
+  `new WebAssembly.Instance(module, imports)` だけをする（コンパイルを音声スレッドでしない）。
+  Module を渡せないブラウザがあれば bytes を渡してその場でコンパイルする — どちらも
+  **最初の再生（resume）より前**に済ませ、`port` で `{ready}` / `{error}` を返す握手を必ず入れる。
+  ビルドは `-sSTANDALONE_WASM`、libc 最小、import は明示した数個だけ、`TextDecoder` / `fetch` に
+  依存しない（AudioWorkletGlobalScope には無いブラウザがある）。文字列は UTF-8 バイト列で受け渡す。
+  **wasm のメモリは固定長（16 MB、grow 禁止）**にし、HEAPF32 のビューは constructor で一度だけ作って使い回す。
+- `process()` は渡された**実際のフレーム数**を読む（128 を決め打ちしない。Chrome は render quantum を
+  変えられるようになりつつある）。入力が繋がっていない時は無音として処理し、チャンネル数は
+  `numberOfInputs: 1, outputChannelCount: [2]` を明示。`process()` は常に `true` を返して
+  文と文の間の無音・リバーブの尾の間もノードを生かす。
+- param とプリセット切替は `port.postMessage` → worklet 側で受けて **事前解決した番号**で
+  `fa_set_param_idx()` / `fa_select_idx()` を呼ぶ（名前の文字列検索を音声スレッドでしない）。
+  連続値はメインスレッド側でまとめ（同じ param はフレームごとに最新 1 件）、送る頻度に上限を設ける。
+- 解析値は worklet から `port.postMessage` で **画面の頻度（約 60 Hz = 48 kHz で 6 ブロックごと）**に
+  小さな配列を送る。postMessage は構造化複製でどうしても割り当てが起きる（配列を使い回しても
+  ゼロにはならない）ので、頻度を絞って GC 負荷を抑え、GC を起こしながらのグリッチ試験（§9）で確かめる。
+  cross-origin isolated なページなら SAB のリング（割り当てゼロ）に切り替えられるよう API は抽象化しておく。
 - **注意（重要）**: worklet の `onmessage` は**音声スレッドで**走る。ここで YAML を
-  パース・グラフ構築するとグリッチの危険がある → D6 のとおり **全 look のプリセットを
-  起動時（最初の resume 前）に一括構築**し、実行中は「番号で切替」と「param 書き込み」だけにする。
-  新しいプリセットの追加（AI が書いた Sound の差し替え）は、無音時またはクロスフェード中に
-  1 つだけ構築する低頻度操作とし、構築時間を計測して予算外なら次の無音まで遅らせる。
+  パース・グラフ構築すると、クロスフェード中でも CPU が足りずに途切れ得る → D6 のとおり
+  **全 look のプリセットを起動時（最初の resume 前）に一括構築**し、実行中は「番号で切替」と
+  「param 書き込み」だけにする。新しい Sound の差し替え（AI が書いたもの）は、**声も尾も鳴っていない
+  時（`tail` が 0）にだけ**構築し、その間の出力は無音でよいことを前提にする（構築中は再生を始めない）。
+- 失敗時: `processorerror`・初期化失敗・`AudioContext` の interrupted / suspended を受けたら、今の
+  直結経路（source → analyser → destination）に繋ぎ直す。バックグラウンドから戻った時は状態を捨てず、
+  出力を 20 ms でフェードインして再開する（いきなり reset するとクリックになる）。
 
 ### 3.3 native（サーバ・ファイル）
 
@@ -145,13 +157,15 @@ param と、事前に構築済みのプリセット間の切替（D6）だけ。
 | 項目 | 決定 |
 |---|---|
 | ブロック | **128 フレーム**（Web Audio の render quantum と同じ）。native は任意長を受け、内部で切る |
-| 制御レート | **32 サンプル**ごとに param の補間値・フィルタ係数を更新。刻みは**絶対サンプル番号**基準 → ホストのチャンク分割に関わらず出力がビット一致 |
-| process() の禁止事項 | メモリ確保、ロック、システムコール、例外、ログ出力、文字列処理。テストビルドで `operator new` をフックして**0回**を検証 |
-| param の受け渡し | 単一生産者・単一消費者のロックフリーリング（固定長 256 件）。溢れたら古い同 param を上書き |
-| denormal | wasm は FTZ を設定できない → **全フィードバック経路（IIR 状態・遅延線・包絡）で明示的に flush**（|x| < 1e-15 → 0）。native では FTZ/DAZ も立てるが、ビット一致のため頼らない |
-| サンプルレート | **48 kHz と 44.1 kHz** を正式サポート（iPhone / Mac は 48k か 44.1k、TTS は 24k / 44.1k を decodeAudioData が変換）。係数は全部 Hz と ms で定義し SR から計算。32k〜96k は動くが golden なし |
+| 制御レート | **32 サンプル**ごとに param の補間値・フィルタ係数を更新。刻みは**絶対サンプル番号**（64 bit のカウンタ）基準。包絡・FFT の hop・乱数の消費・プリセット切替・解析の窓もすべてサンプル時刻で刻む |
+| param イベント | 各変更は**適用サンプル時刻**を持つ（`fa_set_param_at(inst, idx, v, frame)`。時刻なしは「次の制御刻み」）。同時刻は受け付け順。過去の時刻（遅着）は次の制御刻みで適用し diagnostics に数える。→ 同じ時刻付きイベント列なら、チャンク分割に関わらず出力がビット一致 |
+| process() の禁止事項 | メモリ確保、ロック、システムコール、例外、ログ出力、文字列処理。テストビルドで `operator new` / `malloc` をフックして**0 回**を検証 |
+| param の受け渡し | 連続値は **param ごとの「最新値 + 版番号」スロット**（atomic、上書きしても競合しない）。順序が意味を持つもの（select / reset / bypass、時刻付きイベント）は別の SPSC キュー（固定長 256、溢れたら拒否して diagnostics）。生産者は 1 スレッド（worklet では port、native では呼び出し側）と決める |
+| denormal | wasm は FTZ を設定できない → **全フィードバック経路で明示的に flush**: IIR の状態・遅延線への書き込み・包絡・補間の途中値で `|x| < 2⁻¹⁰⁰（≈ 8e-31、-600 dB）→ 0`。これは意図した尾の打ち切りで、場所は全ターゲット共通（コードで1関数）。native の FTZ/DAZ は**立てない**（立てると flush 前の途中計算が wasm と変わる） |
+| 非有限値 | 入力の NaN / Inf は 0 に置き換え、内部状態に NaN が出たらそのノードを reset して diagnostics に記録（声が永遠に黙る事故を防ぐ） |
+| サンプルレート | **48 kHz と 44.1 kHz** を正式サポート（AudioContext の実際の `sampleRate` を使う）。係数は全部 Hz と ms で定義し SR から計算。それ以外は fa_create が拒否（v1）。TTS（24k / 44.1k）の変換はブラウザの decodeAudioData がするので、**ブラウザとサーバの出力は「変換後の同じ PCM を入れた時だけ」ビット一致**する（変換器が違う） |
 | チャンネル | 入力 mono（声）/ stereo（UI 音）。グラフ内で mono→stereo に広げるノード（chorus, widen, reverb）を境に stereo |
-| 数値 | float32。数学関数は自前の近似（D8）。`-ffp-contract=off`、`-ffast-math` 禁止 |
+| 数値 | float32 で計算、係数の生成だけ double。数学関数は自前の多項式近似（sqrt だけは IEEE で正確丸めなので標準を使う）。`-ffp-contract=off`（FMA 禁止）、`-ffast-math` 禁止、x87 禁止（x86-64 は SSE2）、演算順はコードの順に固定。対象は x86-64 / aarch64 / wasm32 の3つで、ここの間のビット一致を CI で見る |
 | SIMD | v1 はスカラー。wasm SIMD128 / NEON は v2 で、**結果が変わらない範囲**（並列化の順序を固定）でだけ |
 
 ### 3.6 遅延の予算（明記）
@@ -164,12 +178,21 @@ param と、事前に構築済みのプリセット間の切替（D6）だけ。
 | chorus / Haas | dry は遅れない（wet 側だけが 5–20 ms ずれる。これは効果そのもの） |
 | reverb / shimmer | wet のみ（predelay は意図した値。pitch shifter の窓遅延 ~30 ms は wet の中に隠れる） |
 
-**結論: 声の頭は 1 サンプルも遅れない。** Graph は `latency_samples()` を返し、0 でないプリセットは
-validate で warning を出す（`allow_latency: true` で黙らせる）。
+**結論: fluent_audio が足す遅延は 0 サンプル（声の頭は遅れない）。** ただし IIR フィルタには
+周波数ごとの位相遅れ（群遅延）があり、hp 80 Hz で低域に ~2 ms、声の帯域では 0.1 ms 未満 — 聞いて分かる
+量ではないが「0」とは別に記録する。端末・ブラウザ自身の出力遅延（`AudioContext.outputLatency` 等）は
+fluent_audio の外の話で、ベンチページで端末ごとに実測して載せる。
+Graph は `latency_samples()` を返し、0 でないプリセットは validate で warning を出す（`allow_latency: true`）。
+look-ahead のサンプル数は実際の SR から計算する（1.5 ms = 48k で 72、44.1k で 66）。
 
-CPU 予算: 1 プリセットあたり **128 フレーム処理が 48 kHz の 1 quantum（2.67 ms）の 5% 以内
-（≈ 130 µs）を iPhone 12 / Tesla の Chromium で**。§4 の積算で最も重い fluent でも
-~350 flop/サンプル ≈ 17 MFLOP/s で、余裕は 10 倍以上ある。
+CPU 予算: **バンク切替中（2 プリセット同時）でも、1 quantum（48 kHz で 2.67 ms）の処理が 5% 以内
+（≈ 130 µs）を iPhone 12 / Tesla の Chromium で**。§4 の演算数の積算（最も重い fluent で
+~350 演算/サンプル）は目安にすぎない（数学近似・メモリアクセス・FFT のまとめ処理・JS のコピーと
+メッセージを含まない）ので、**判定は実機の最悪値**（切替中・尾が残る中・GC を起こしながら）で行う。
+
+メモリ: reverb の長い残響は帰還ゲインで作るので遅延線は短い（1 本最大 ~6,000 サンプル、size 1.8 で）。
+1 reverb ≈ 8 線 × 8 K（2 冪に丸め）× 4 B ≈ 256 KB、chorus / shimmer は数十 KB。looks バンク全体で
+**2 MB 程度**の見込み。wasm のメモリ 16 MB 固定に十分収まる（実測して確定する）。
 
 ---
 
