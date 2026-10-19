@@ -1,6 +1,7 @@
 # fluent_audio 設計書 — 声と UI 音のための宣言的リアルタイム音響効果
 
-ステータス: **v0.1 草案（2026-10-19）— オーナー確認待ち**。§15 の未決事項を潰してから M1 に着手する。
+ステータス: **v0.2（2026-10-19）— M1 実装済み**。§15 はオーナーの回答で確定（§15 に記録）。M1 で設計書が黙っていた所の決定は §16。
+フィルタ（ノード）の足し方は §4.1 と [docs/howto-add-filter.ja.md](../howto-add-filter.ja.md)。
 
 **目的**: Kepler の声（と UI の効果音）に、見た目（look）ごとの「心地よい SF の音」を
 **遅れなし**でかける。fluent_scene が「同じ絵をどこでも」なら、fluent_audio は
@@ -35,6 +36,7 @@
 | D8 | 数学関数（sin / tanh / exp / log）も**自前の近似**、`-ffp-contract=off`、fast-math 禁止 | native と wasm でビット一致させるため（libm は環境で違う） |
 | D9 | 解析をグラフの中で計算して顔に渡す: **口は声そのもの（効果前）の包絡**、光・きらめきは**出口の音**（level / 重心）、別に残響中フラグ `tail` | 今の AnalyserNode を置き換える。口がリバーブの尾でパクパクしない |
 | D10 | テストは fluent_scene と同じ **golden 契約**: オフラインレンダ → golden WAV、native↔wasm 一致 | 「同じ音」を機械で守る |
+| D11 | **1 ノード = 1 ファイル**（宣言的な param 表 + prepare / control / process / reset、`FA_NODE(name, Class, help)` で登録）。合成のフィルタは C++ なしの **YAML マクロ** | フィルタを足すのを fluent_vision のノードパッケージ並みに簡単に（オーナー 2026-10-19「fluent visionみたいに簡単にフィルタ追加したりしたい」）。§4.1 |
 
 ---
 
@@ -237,6 +239,61 @@ CPU 予算: **バンク切替中（2 プリセット同時）でも、1 quantum�
   Signalsmith「Let's Write a Reverb」（MIT の解説とコード）、Dattorro の plate、
   Zölzer『DAFX』の chorus / pitch shift。
 
+### 4.1 ノードの足し方（拡張の仕組み、D11）
+
+オーナーの要求（2026-10-19）: 「fluent vision みたいに簡単にフィルタ追加したりしたい」。fluent_vision_ros2 で
+ノードのパッケージを 1 つ置けば使えるのと同じく、**1 つのまとまりを置くだけ**で、ほかのファイルを触らずに使えること。
+
+**C++ ノード = `src/nodes/<name>.cpp` 1 枚**:
+
+```cpp
+class Chorus final : public Node {
+public:
+    enum { kVoices, kRate, /* ... */ };
+    static constexpr ParamSpec kParams[] = {   // 名前・単位・範囲・既定値・補間・説明（・列挙・リスト）
+        {"voices", "", 1, 4, 2, Smooth::kFixed, "number of delayed voices"},
+        {"rate_hz", "Hz", 0.01f, 5, 0.25f, Smooth::kLinear, "LFO speed"}, /* ... */ };
+    static int outChannels(int) { return 2; }         // 既定は入力と同じ
+    void prepare(Prepare& p) override;                // ここだけでメモリを確保（p.arena）
+    void reset() noexcept override;
+    void control() noexcept override;                 // 32 サンプルごと（param は基底クラスが補間済み）
+    void process(Slice& s) noexcept override;         // ≤ 32 サンプル
+};
+FA_NODE(chorus, Chorus, "Modulated-delay chorus / doubler, mono in → stereo out.")
+```
+
+- `FA_NODE` は静的な登録子を作る。ビルドは `src/nodes/*.cpp` を glob で拾い、OBJECT ライブラリとしてリンクするので
+  （静的ライブラリのように使われないオブジェクトが落ちない）、**置けば登録される**。
+- その param 表を**全部が読む**: YAML ローダ（名前・範囲・列挙・`bands: [...]` のリスト・`$params` に繋げるか）、
+  C API（`<preset>.<node>.<param>` で set / get、`fa_nodes_json()` で表そのもの）、wasm / JS（`fx.params`）、
+  Python（`fluent_audio.nodes()`）、ドキュメント（`fa_render --list --markdown` → `docs/nodes.md`）。
+- リアルタイムの規則は**基底クラス**が持つ: メモリは `prepare()` に渡される arena だけ（コンパイル後に封印、後からの確保は失敗）、
+  param の補間（最低 20 ms、対数 / 線形）と変化フラグ、出力の NaN / Inf 検査と reset。
+- **テストも自動**: 登録された全ノードに、既定値・範囲の両端で有限・process 中の確保 0 回（malloc / new フック）・
+  ランダムなチャンクでビット一致・尾がちょうど 0 で終わる、の 5 つ（`tests/test_nodes.cpp`）＋ golden。
+- 雛形: `tools/fa_new_node.py <name> [--stereo]` がノードのファイルと golden のケース（`tests/cases/<name>.yaml`）を書く。
+
+**YAML マクロ = `macros/<name>.yaml` 1 枚**（C++ なしの「フィルタ」。新しいフィルタの多くはこれで足りる）:
+
+```yaml
+schema: fluent.sound/v1alpha1
+macro: shimmer
+params:
+  semitones: { default: 12, range: [-24, 24] }
+  hp_hz:     { default: 600, range: [20, 4000] }
+  decay_s:   { default: 2.8, range: [0.1, 20] }
+chain:
+  - eq: { bands: [ { type: hp, f: $hp_hz } ] }
+  - pitch_shift: { semitones: $semitones }
+  - reverb: { decay_s: $decay_s, mix: 1 }
+```
+
+- 使う側は普通のノードと同じ（`- shimmer: { semitones: -12 }`）。外の param は `$名前` と定数との四則・括弧の式で中に渡す
+  （`$params.x` を渡せば実行中の値も式ごと効く）。マクロの param は実行中も名前で動かせる（`fluent.shimmer1.semitones`）。
+- `macros/` はビルド時にライブラリへ埋め込む（native でも wasm でもファイルなしで使える）。プリセットの隣の
+  `presets/macros/` はその束だけ（pack に入る）。マクロの入れ子は 4 段まで。
+- M1 では `radio`・`shimmer`・`doubler` を**マクロで**作った（§4 の表では C++ ノードの予定だった）。
+
 ---
 
 ## 5. Sound YAML
@@ -298,6 +355,10 @@ analysis: { voice: true, level: true, onset: true, centroid: true, tail: true, r
   （音では即時変更 = クリックなので、「即時」は存在しない）。
 - digest: fluent_scene と同じく並べ替え不変の指紋（params の順や空白に依存しない）。
 - 予算: validate が各ノードのコスト（§4 の表）を積算して `budget: { flops_per_sample: 600 }` を超えたら拒否。
+- （M1 で追加）ノードには `id: room_verb` で名前を付けられる。付けなければ `<種類><番号>`（`eq2`, `reverb1`、マクロの中は
+  `shimmer1.reverb1`）。実行中の param 名は `<プリセット>.<id>.<param>`（リストは `eq2.bands.1.gain_db`）、`$params` は名前そのまま。
+- （M1 で追加）`trim_db:` — プリセットの出力の音量合わせ（bus の和の後・master の前）。継承しない。
+- （M1 で追加）bus の中の `send`（bus → bus）は v1 ではまだ書けない（拒否）。`mix` は master の中だけ、`send` は chain の中だけ。
 
 ### 5.2 プリセット（look ごと）の束
 
@@ -397,16 +458,19 @@ const Analysis& a = g.analysis();
 → `deesser（6.5 kHz, -32 dB, 3:1）`。最後は `limiter -1 dBFS`。**音量は全 look で揃える**
 （プリセットごとに `makeup` を測って固定し、golden の loudness テストで ±1 LU を守る）。
 
+M1 の時点（2026-10-19）: AURORA と LIQUID の見た目は退役。aurora のプリセットは消し（`aurora` は fluent への alias だけ残す）、
+LIQUID は fluent の金属（`fluent_metal`、`liquid` は alias）。音量は Kepler の声で測って `trim_db` で dry にそろえた（全 look ±0.1 LU）。
+
 | look | 狙い | 中身（chain / buses） | 試作 |
 |---|---|---|---|
 | **kepler** | いつもの声を「少しだけ良く」。きれい＋空気 | peak 3.2 kHz +1.5 / highshelf 10 kHz +2.5 / exciter 4.5 kHz 0.08 / 小部屋 reverb 0.5 s（wet は dry 比 -31 dB*） | ✓ |
 | **luna** | ルナ自身の声（Qwen3）。**色付けなし** | voice_base だけ（低域カット・レベル整え・歯擦音）+ limiter。キャラの効果は掛けない | – |
 | **fluent** | 柔らかい液体。きらめき | 上の §5.1 の例そのもの（コーラス 3 声・幅 1.3・室 1.6 s（-22 dB*）・1 オクターブ上のシマー（-22 dB*）） | ✓ |
 | **kitt** | 車載コンピュータ。無線の帯域＋軽い歪み | radio（220 Hz–6 kHz、1.4 kHz +3）/ saturate 1.8 mix 0.6 / ringmod 55 Hz 0.05 / 車内の短い反射 0.35 s | ✓ |
-| **hal** | 落ち着いた、暖かい、近い。冷たくしない | lowshelf 200 Hz +1.5 / peak 3 kHz -1（耳当たりを丸く）/ highshelf 9 kHz -1 / doubler なし / 小部屋 0.7 s を -26 dB / compressor をもう少し深く（3:1）で「近接効果」 | – |
+| **hal** | 落ち着いた、暖かい、近い。冷たくしない | lowshelf 220 Hz +2 / peak 3 kHz -1.5（耳当たりを丸く）/ highshelf 7 kHz -2.5 / 小部屋 0.7 s / compressor はごく浅く（1.6:1）。M1 で測ったら初案（3:1 を voice_base の後に重ねる）は母音を潰して**逆に 5 dB 明るく・3 dB 小さく**なったので直した。※ Kepler では HAL の声は今サーバ（mode.sh の ffmpeg）で作っているので、ページは二重掛けしないよう `clean` を使う | ✓（C++） |
+| **fluent_metal** | fluent の金属版（旧 LIQUID） | `extends: fluent` + peak 4.2 kHz +1 + 短く明るい金属のプレート（0.9 s、size 0.35） | ✓（C++） |
 | **gargantua** | 深宇宙。遠くまで伸びる暗い残響を**薄く** | lowshelf 160 Hz +2 / 暗い大空間 reverb 5.5 s（damp 3.5 kHz、predelay 60 ms、-17 dB*）/ 1 オクターブ下のシマー 6 s を薄く | ✓ |
-| **aurora** | 夜空の光のカーテン。高く透明 | highshelf 8 kHz +3 / chorus 2 声 0.12 Hz / シマー +12（オクターブ）と +19（その 5 度上）を同時に、オクターブを強めに薄く / reverb 2.2 s 明るめ（damp 10 kHz） | – |
-| **system** / **comic** | 未定。当面 kepler と同じ | `extends: kepler` | – |
+| **system** / **comic** | 当面 kepler と同じ（オーナー 2026-10-19） | バンクの `aliases: { system: kepler, comic: kepler }` | – |
 
 \* dB は send の値ではなく、**試作で測った wet のエネルギーの dry 比**（send 0.05 × reverb の利得 = -31 dB 等）。
 本番では YAML に `wet_db:` で書けるようにし、reverb の内部利得の違いに左右されないようにする（M2）。
@@ -494,19 +558,22 @@ TTS の声のライセンス: AivisSpeech のモデルは利用規約がモデ�
 
 ---
 
-## 11. ディレクトリ構成（予定）
+## 11. ディレクトリ構成（M1 の実際）
 
 ```
 fluent_audio/
-  include/fluent_audio/   graph.hpp node.hpp params.hpp analysis.hpp sound/{document,compiler}.hpp fa.h
-  src/                    core/（遅延線・フィルタ・包絡・数学近似）nodes/（§4 を 1 ノード 1 ファイル）sound/
-  wasm/                   build.sh  worklet.js（AudioWorkletProcessor）fluent-audio.js（メイン側の薄いラッパ）demo.html
-  python/                 nanobind モジュール
-  tools/                  fa-render  fa-bench  fa-golden
-  presets/                kepler.yaml fluent.yaml … looks.yaml（バンク）
-  tests/                  golden/  test_*.cpp
-  sketch/                 今回の numpy 試作（M1 で C++ に置き換えたら削除）
-  docs/                   design/ getting-started.ja.md
+  include/fluent_audio/   fa.h（C API）node.hpp（Node・ParamSpec・FA_NODE）dsp.hpp（数学近似・biquad・遅延線）engine.hpp yaml.hpp
+  src/                    core/（engine・node・YAML パーサ）sound/compiler.cpp（Sound YAML → Engine）capi.cpp
+                          nodes/（1 ノード 1 ファイル。glob で拾う）
+  macros/                 radio.yaml shimmer.yaml doubler.yaml（YAML マクロ。ビルドで埋め込む）
+  presets/                kepler.yaml fluent.yaml fluent_metal.yaml … looks.yaml（バンク）
+  wasm/                   build.sh  fa-worklet.js（AudioWorkletProcessor）fluent-audio.js（ページ側）test.html
+  python/                 fluent_audio.py（ctypes。nanobind は M4）
+  tools/                  fa_render.cpp（レンダ・--list・--describe・--loudness・--bench）fa_new_node.py（雛形）
+                          fa_pack.py（束を 1 文書に）embed_macros.py
+  tests/                  test_core / test_nodes / test_golden（.cpp）golden/ cases/ wasm_render.mjs browser_check.py
+  sketch/                 numpy の試作（比較用に残す）
+  docs/                   design/ howto-add-filter.ja.md nodes.md（生成）
 ```
 
 ---
@@ -547,7 +614,7 @@ AudioBufferSourceNode(文) ─▶ AudioWorkletNode('fluent-audio') ─▶ destin
 ```
 
 - `tts.js` の `out()` を「worklet があればそれ、無ければ今の analyser」に置き換える（**機能フラグ**
-  `localStorage['kepler.faudio']`、既定オフ → オーナーが聞いて OK したら既定オン）。
+  `localStorage['kepler.fx']` / `?fx=1`、既定オフ → オーナーが聞いて OK したら既定オン）。M1 で実装済み。
 - `level()` は worklet から届いた最新の `analysis.voice`（口用、§6）を返す（同じ 0–1 の意味。顔側は変更なし）。
   余裕があれば `level`（出口）/ `onset` / `centroid` も faceWin のメッセージに足す（各顔が使うかは顔ごとに後で）。
 - look が変わったら（mode.json を読んだ時 / CHARA の選択時）`port.postMessage({select: look})`。
@@ -596,9 +663,25 @@ AudioBufferSourceNode(文) ─▶ AudioWorkletNode('fluent-audio') ─▶ destin
 
 M1 の見積もり: コア + 5 ノード + YAML + worklet で集中して数日。M2 はノードが小さいので 1 ノード数時間 × 13。
 
+**M1 の実績（2026-10-19）**: 上の M1 に加えて、オーナーの指示どおり look のプリセットに要るノードを先に入れた —
+C++ ノード 14（eq, compressor, limiter, deesser, exciter, saturate, ringmod, chorus, widen, reverb, pitch_shift, gain, mix, send）
+＋ YAML マクロ 3（radio, shimmer, doubler）で、**全 look のプリセット・バンク切替（クロスフェード・尾の流し切り）・bypass** まで動く。
+`ctest` 4 本（core / nodes / golden / native↔wasm）が緑、headless Chromium の本物の AudioWorklet も native とビット一致
+（`tests/browser_check.py`）。Kepler には機能フラグ（`?fx=1`）付きで接続（§13.2）。
+まだ: iPhone / Mac / Tesla の実機、口合わせの遅延補正（getOutputTimestamp）、gate / duck / meter / formant / bitcrush、
+サウンドリンター、`wet_db`、UI 音、`X-FA-Applied`（M2 / M3 のまま）。
+
 ---
 
-## 15. 未決事項（オーナーに聞きたいこと）
+## 15. 未決事項 → 決定（オーナー 2026-10-19）
+
+回答: 声は今のまま（AivisSpeech 阿井田茂 Calm）で、**look ごとの個性はエフェクトだけで出す**（「声はそのままで、エフェクトだけで
+よくないですか」）。遅れないこと、心地よい SF の音、ほかのプログラム（fluent_scene など）から**ライブラリとして呼べる**こと。
+未決事項は本書の推奨どおり: 1 控えめ（試作くらい）、2 ブラウザ主・サーバは後、3 luna は素の声・comic / system は kepler、
+4 UI 音はまだ、5 iPhone の消音スイッチは触らない、6 名前は fluent_audio / `fa_`、7 公開はオーナーが決める（ローカルのまま）、
+8 は実機で見てもらう（M1 は遅延補正なし）。
+
+（元の問い）
 
 1. **既定の効き**: 各 look の効きは今回の試聴くらい（控えめ）でよいか。もっと「SF っぽさ」を前に出すか。
 2. **どこで掛けるか**: 推奨は「ブラウザの worklet（端末ごと・live）を主、サーバは G2 / ファイル用」。
@@ -629,3 +712,29 @@ M1 の見積もり: コア + 5 ノード + YAML + worklet で集中して数日�
   品質テストの言い過ぎの修正（§8・§9）、ライセンスの但し書き（§10）、Safari / Tesla / CSP の注意（§13.4）、
   M1 のノード構成とプリセットの不一致の解消（§14）。
 - 採らなかったもの: なし（言い回しの程度の差はあるが、全項目に対応した）。
+
+---
+
+## 16. M1 で決めたこと（本書が黙っていた所・変えた所）
+
+1. **プリセットの切替は「入力」のクロスフェード**: 新しいプリセットの入力を 0→1、古いほうを 1→0（300 ms、線形）にし、出力は
+   両方を足す。古いほうは入力が 0 になっても走り続け、尾が -60 dB を 100 ms 下回るか 2 秒で止まる。3 つ目の切替が来たら
+   一番古い尾を出力側で 50 ms でフェードアウト（§5.2 の言葉どおり）。bypass も同じ形（20 ms）。
+2. **最初の音より前の select は即時**（クロスフェードしない）。ページは作る時に今の look を渡す（`preset` オプション）。
+3. param の受け渡しは **SPSC キュー 1 本**（固定 256、時刻付き、溢れたら拒否して数える）。§3.5 の「param ごとの最新値スロット」は
+   M2（連続値を高頻度で送る UI ができたら）。ページ側でマイクロタスクごとに同じ param をまとめてから送る。
+4. limiter の look-ahead は v1 では**持たない**（range を [0, 0] にして、書いたら読み込みで拒否）。遅延は全プリセット 0 サンプル。
+5. サンプルレートは **22.05〜96 kHz を受ける**（係数は全部 Hz / ms から計算）。golden は 44.1k と 48k。
+6. ブラウザの入力は **mono**（AudioWorkletNode の `channelCount: 1, explicit`。ステレオは下ミックス）。
+7. 解析: `voice` / `level` は 10 ms の電力包絡 → dB → 0–1、`peak` は 300 ms で減衰する最大値（チャンク不変）、`onset` は
+   `voice` の速い dB が遅い参照を 9 dB 越えた時（60 ms 不応期、50 ms で減衰）、`centroid` は 8 制御刻みごとの 256 点 FFT。
+   wasm ではページがエンジンの構造体をメモリから直接読む。
+8. 数学: `std::floor` も使わない（SSE2 では libm 呼び出しになり native が wasm より遅かった）。整数への切り捨てで正確に計算。
+9. wasm は `STANDALONE_WASM`・メモリ 16 MB 固定・230 KB。import は libc の stderr 用の WASI 3 つだけ（スタブで 52 を返す）。
+   Module はメインスレッドでコンパイルして渡し、bytes も添える（Module を受け取れないブラウザは worklet で同期コンパイル）。
+10. 束は **pack**（`tools/fa_pack.py`: バンクと隣の YAML を `library:` に入れた 1 文書）でブラウザに渡す。ファイルからの読み込みと
+    ビット一致を確認済み。
+11. Python は ctypes の薄いラッパ（`python/fluent_audio.py`）を先に置いた。nanobind は M4 のまま。
+12. Kepler: HAL の声は M1 と同じ日にサーバ側（mode.sh の ffmpeg: ピッチ・暖かい近いマイク・部屋）で作られたので、ページは
+    HAL の時 `clean`（レベル整えと limiter だけ）を使い、二重に色を付けない。fluent_audio の `hal` プリセットは試聴と M3 のために残す。
+13. 声が終わったとみなすのは**尾が消えた時**（`tail` が 0、最大 +1.5 s）。マイクが自分の残響を拾わないため（§13.4 の簡易版）。
