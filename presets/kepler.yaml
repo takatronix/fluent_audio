@@ -1,0 +1,13 @@
+# kepler — the usual voice, just a little better: clean + a touch of air, a hint of room.
+schema: fluent.sound/v1alpha1
+name: kepler
+extends: voice_base
+io: { in: mono, out: stereo }
+chain:
+  - eq: { bands: [ { type: peak, f: 3200, q: 1.0, gain_db: 1.5 },
+                   { type: highshelf, f: 10000, gain_db: 2.5 } ] }
+  - exciter: { freq: 4500, drive: 2.0, mix: 0.08 }
+  - send: { to: room, gain: 0.05 }
+buses:
+  room: [ reverb: { decay_s: 0.5, size: 0.45, damp_hz: 7000, predelay_ms: 6 } ]
+analysis: { level: true, onset: true, centroid: true, tail: true }

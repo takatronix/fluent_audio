@@ -1,0 +1,7 @@
+# luna — Luna's own voice (Qwen3-TTS): left clean on purpose.
+schema: fluent.sound/v1alpha1
+name: luna
+extends: voice_base
+io: { in: mono, out: stereo }
+chain: []
+analysis: { level: true, onset: true, centroid: true, tail: true }

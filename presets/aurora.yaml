@@ -1,0 +1,18 @@
+# aurora — curtains of light: high and clear, a slow chorus, octave and fifth shimmers alternating, bright room.
+schema: fluent.sound/v1alpha1
+name: aurora
+extends: voice_base
+io: { in: mono, out: stereo }
+chain:
+  - eq: { bands: [ { type: highshelf, f: 8000, gain_db: 3 } ] }
+  - exciter: { freq: 5000, drive: 2.0, mix: 0.08 }
+  - send: { to: room, gain: 0.10 }
+  - send: { to: octave, gain: 0.14 }
+  - send: { to: fifth, gain: 0.08 }
+  - chorus: { voices: 2, rate_hz: 0.12, depth_ms: 2.0, base_ms: 11, mix: 0.22 }
+  - widen: { width: 1.2, bass_mono_hz: 150 }
+buses:
+  room:   [ reverb: { decay_s: 2.2, size: 0.9, damp_hz: 10000, predelay_ms: 20 } ]
+  octave: [ shimmer: { semitones: 12, decay_s: 3.0, hp_hz: 700, mix: 1 } ]
+  fifth:  [ shimmer: { semitones: 19, decay_s: 3.5, hp_hz: 900, mix: 1 } ]
+analysis: { level: true, onset: true, centroid: true, tail: true }
