@@ -172,7 +172,8 @@ param と、事前に構築済みのプリセット間の切替（D6）だけ。
 
 | 区間 | 追加遅延 |
 |---|---|
-| dry 経路（EQ, comp, de-esser, exciter, sat, gate, ring-mod, bitcrush, widen の M/S） | **0 サンプル** |
+| dry 経路（EQ, comp, de-esser, gate, ring-mod, bitcrush, widen の M/S） | **0 サンプル** |
+| saturate / exciter / radio（ADAA） | 0.5 サンプル（48k で 0.01 ms。latency_samples には切り捨てで 0 と報告し、golden の位相に含める） |
 | AudioWorklet 自体 | **0**（render quantum の中で同期処理。グラフに遅延ブロックは足さない） |
 | limiter | 既定 **0**（look-ahead なしのソフトクリップ併用）。`lookahead_ms: 1.5` を書いた時だけ 72 サンプル |
 | chorus / Haas | dry は遅れない（wet 側だけが 5–20 ms ずれる。これは効果そのもの） |
@@ -204,18 +205,18 @@ CPU 予算: **バンク切替中（2 プリセット同時）でも、1 quantum�
 |---|---|---|---|---|
 | `eq` | RBJ biquad（TDF-II transposed）を最大 8 段。種類 hp / lp / bp / peak / lowshelf / highshelf / notch。係数は制御レートで補間 | `bands: [{type, f, q: 0.707, gain_db: 0}]` | 5×段数 | 0 |
 | `compressor` | フィードフォワード、ソフトニー、log 領域、peak/RMS 混合の包絡（attack/release 別） | `threshold_db: -24, ratio: 2, attack_ms: 10, release_ms: 150, knee_db: 6, makeup_db: 0, key: self\|<bus>` | ~15（log/exp は制御レートで計算し補間） | 0 |
-| `limiter` | 既定: 速い compressor + 最後に滑らかなソフトクリップ（tanh 近似、-1 dBFS 天井）。opt: look-ahead 1.5 ms + 4 倍オーバーサンプルの true-peak 推定 | `ceiling_db: -1, release_ms: 80, lookahead_ms: 0` | ~12（look-ahead 時 ~40） | 0（opt 72） |
-| `deesser` | 分割帯域: HP（既定 6.5 kHz）だけを自分の帯域で圧縮して戻す（`x - hi + comp(hi)`）。位相が合うよう相補分割 | `freq: 6500, threshold_db: -30, ratio: 3` | ~25 | 0 |
-| `exciter` | 高域（`freq` 以上）だけを tanh で倍音化し、もう一度 HP して少量足す（濁らない「空気」） | `freq: 4500, drive: 2, mix: 0.08` | ~20 | 0 |
-| `saturate` | tanh / 非対称 soft-clip、レベル補償。v1 はオーバーサンプルなし（drive ≤ 3 に制限してエイリアスを抑える）。v2 で 2× ADAA | `drive: 1.5, mix: 1, asym: 0` | ~8 | 0 |
+| `limiter` | **安全リミッタ**（透明な true-peak リミッタではない）: L/R 連動の速い peak compressor + 最後に**有界の**ソフトクリップ曲線（出力は数学的に天井を越えない = サンプルピークの保証）。look-ahead なしなので立ち上がりの一瞬はクリップ曲線が受ける — 声は loudnorm 済みで、ここに届くのは稀。opt: look-ahead 1.5 ms（gain の先読み）+ 4× の true-peak 検出 | `ceiling_db: -1, release_ms: 80, lookahead_ms: 0` | ~12（look-ahead 時 ~40） | 0（opt 1.5 ms） |
+| `deesser` | **ダイナミック high-shelf**: 検出は HP（既定 6.5 kHz）帯域の包絡、効かせるのは high-shelf biquad 1 段の gain（0〜-`max_db`）。帯域を分けて足し戻さないので、圧縮中も位相の打ち消しや色付きが出ない（分割＋再合成は `1+(g-1)H_HP` の位相で色付く） | `freq: 6500, threshold_db: -30, ratio: 3, max_db: -8` | ~20 | 0 |
+| `exciter` | 高域（`freq` 以上）だけを tanh で倍音化し、もう一度 HP して少量足す（濁らない「空気」）。非線形部は saturate と同じ ADAA | `freq: 4500, drive: 2, mix: 0.08` | ~25 | 0 |
+| `saturate` | tanh / 非対称 soft-clip、レベル補償。**1 次 ADAA**（antiderivative antialiasing: tanh の原始関数 log cosh の差分で折り返しを ~20 dB 減らす。代わりに 0.5 サンプルの遅れ）+ 非対称時は DC ブロッカ。エイリアスはスイープで実測して §9 の基準に入れる。足りなければ v2 で 2× オーバーサンプル（halfband IIR、遅延は数サンプル） | `drive: 1.5, mix: 1, asym: 0` | ~15 | 0.5 サンプル |
 | `chorus` | 1–4 声の変調ディレイ（3 次 Hermite 補間）、LFO は sin 近似、声ごとに位相と速度をずらし L/R に配置。dry はそのまま | `voices: 2, rate_hz: 0.25, depth_ms: 2.5, base_ms: 12, mix: 0.3, spread: 1` | ~12×声数 | 0（wet のみ遅れ） |
 | `doubler` | chorus の特殊形: 1 声、ランダム（平滑化ノイズ）で 8–25 ms と微小ピッチ揺れ | `delay_ms: 15, wobble: 0.3, mix: 0.25` | ~15 | 0 |
-| `widen` | M/S 幅（mono 互換: モノに畳むと side が消えるだけ）+ 任意の Haas は **side にだけ**入れる（モノ和が変わらない） | `width: 1.0, haas_ms: 0, bass_mono_hz: 150` | ~6 | 0 |
-| `reverb` | **8 線 FDN**（Householder 帰還、互いに素な長さ、線ごとに 1 次 LPF 減衰、遅延長をゆっくり変調してメタリック感を消す、入力に 4 段 allpass 拡散）。RT60 から線ごとの帰還ゲインを計算 | `decay_s: 1.2, size: 1, damp_hz: 6000, predelay_ms: 10, diffusion: 0.7, mod: 0.2, width: 1` | ~70 | 0（wet は predelay） |
-| `shimmer` | 「`pitch_shift` → `reverb`」を束ねた糖衣。pitch shifter は 2 タップ遅延線＋sin² クロスフェード（Doppler 型、軽い）。帰還の中に入れる版（音が昇っていく）は `feedback` > 0 | `semitones: 12, mix: 0.2, decay_s: 2.8, feedback: 0, hp_hz: 600` | ~100 | 0（wet のみ ~30 ms） |
+| `widen` | M/S 幅（`M=(L+R)/2, S=(L-R)/2`、`width` は S だけに掛かる。モノに畳むと side が消えるだけ）+ 任意の Haas は **side にだけ**入れる（モノ和が変わらない）。mono の声には side が無いので widen 単体では広がらない — side を作るのは chorus / reverb。widen の後ろに非線形ノードを置くと対称性が崩れるので validate で warning | `width: 1.0, haas_ms: 0, bass_mono_hz: 150` | ~6 | 0 |
+| `reverb` | **8 線 FDN**。帰還行列は正規化 Householder `A = I - (2/N)·11ᵀ`（直交）。線 i の帰還ゲイン `gᵢ = 10^(-3·Dᵢ/(fs·T60))` に、減衰用 1 次 LPF（DC ゲイン 1、全帯域で \|H\|≤1）を掛ける → ループゲインは全周波数で < 1。遅延長はゆっくり変調してメタリック感を消す（深さ ≤ 8 サンプル、速さ ≤ 1 Hz、**変調線は線形補間**（Hermite はオーバーシュートでループゲイン > 1 になり得る））。入力に 4 段 allpass 拡散。全 param の端の組み合わせで安定性テスト | `decay_s: 1.2, size: 1, damp_hz: 6000, predelay_ms: 10, diffusion: 0.7, mod: 0.2, width: 1` | ~70 | 0（wet のみ predelay） |
+| `shimmer` | 「`hp` → `pitch_shift` → `reverb`」を束ねた糖衣（reverb の params も書ける）。pitch shifter は 2 タップ遅延線＋sin² クロスフェード（Doppler 型、窓 50 ms）。周期的なうねりと立ち上がりのにじみが出る — wet 専用・低い mix で使う前提で、残響が隠す。上げる時は読み出しが速いので**前段に LPF（fs/(2·比) 付近）を入れて折り返しを防ぐ**。**v1 は帰還なし**（音が昇り続ける版は v2: 帰還 ≤ 0.5、ループ内にリミッタ、+12 / +19 / -12 半音で安定性テスト） | `semitones: 12, mix: 0.2, hp_hz: 600` + reverb の params | ~100 | 0（wet のみ ~25 ms） |
 | `ringmod` | 低い周波数（20–80 Hz）の sin を**少量**かける（`1 - mix + mix·sin`）。電子っぽい粒。高い周波数はロボ声になるので range で 200 Hz までに制限 | `freq: 50, mix: 0.05` | ~4 | 0 |
 | `formant` | **subtle** なフォルマント移動: v1 は 3 本の peak を動かす「疑似フォルマント EQ」（声道長を ±5% 程度に感じさせる）。本物の LPC / PSOLA は v2 | `shift: 0.0`（-1..1） | ~20 | 0 |
-| `radio` | 帯域制限（HP 2 次 + LP 2 次）+ 中域の山 + 軽い saturate のプリセット化ノード。電話ほど狭くしない | `low_hz: 220, high_hz: 6000, presence_db: 3, drive: 1.8` | ~25 | 0 |
+| `radio` | 帯域制限（HP 2 次 + LP 2 次）+ 中域の山 + 軽い saturate（ADAA）のプリセット化ノード。電話ほど狭くしない | `low_hz: 220, high_hz: 6000, presence_hz: 1400, presence_db: 3, drive: 1.8, mix: 0.6` | ~30 | 0.5 サンプル |
 | `bitcrush` | ビット深度と sample-and-hold の降サンプル、**ごく少量**を wet で足す。ディザ（TPDF）付きで耳障りなトーンを避ける | `bits: 12, downsample: 1, mix: 0.05` | ~6 | 0 |
 | `gate` | ヒステリシス付き（open/close 閾値）、hold、ゆっくり閉じる（range で完全に 0 にしない） | `open_db: -50, close_db: -56, hold_ms: 60, release_ms: 120, range_db: -24` | ~8 | 0 |
 | `duck` | サイドチェーン圧縮: `key` の bus（例: voice）の包絡でこの経路を下げる | `key: voice, depth_db: -9, attack_ms: 5, release_ms: 250` | ~10 | 0 |
@@ -223,6 +224,11 @@ CPU 予算: **バンク切替中（2 プリセット同時）でも、1 quantum�
 | `meter` | 解析ノード（§6）。音は通過のまま | `level, onset, centroid, tail` | ~10（重心は 256 点 FFT を 2 ブロックに 1 回） | 0 |
 
 実装メモ:
+- **実行中に変えてよい param と、変えられない param を分ける**。連続値（周波数・gain・mix・時間）は
+  `runtime_mutable` にでき、制御レートで補間 → 係数を作り直す（biquad は TDF-II transposed なので
+  滑らかな係数変化で安定。周波数は対数で補間）。遅延時間は**変化速度を制限**（1 サンプルあたり 1 サンプル未満）。
+  離散値（フィルタの種類・声の数・ビット数・帯域の段数）は**compile 時だけ**（実行中に変えたい時は
+  プリセットを2つ作ってクロスフェード）。
 - 共通の部品: 遅延線（2 冪のリングバッファ、補間 linear / Hermite）、1 次・2 次フィルタ、
   包絡、LFO（位相累積 + 多項式 sin）、乱数（xorshift32、seed 固定 → 決定的）、param スムーザ。
 - 全ノードは `prepare(sr, max_block)` で必要メモリを**一度だけ**確保。遅延線の最大長は
@@ -274,8 +280,15 @@ analysis: { level: true, onset: true, centroid: true, tail: true, rate_hz: 94 }
 規則:
 - **chain / buses / master の3段だけ**。任意の DAG は v1 では書けない（読みやすさ・検証・
   コスト見積もりのため）。bus から bus への send は 1 段まで（ループ禁止を型で保証）。
-- `mix.amount` は master で「この Sound 全体の効き」を決める特別扱い: Graph は入力を
-  dry としてコピーしておき、`out = dry·(1-a) + wet·a` を等パワーで混ぜる（a=0 で完全に素通し）。
+- `mix.amount` は master で「この Sound 全体の効き」を決める特別扱い: Graph は voice_base の後の信号を
+  dry としてコピーしておき、`out = dry·(1-a) + wet·a` を**線形**で混ぜる（dry と wet は同じ声で相関が高いので、
+  等パワーにすると中間で +3 dB 膨らむ）。a=0 は「色付けなしの声（レベル整えと limiter は残る）」で、**素通しではない**。
+- **素通し（bypass）は別の操作**: `fa_bypass(inst, 1)` は limiter も含めて全部を外す。切替は 20 ms のフェードで、
+  bypass 前に鳴っていた尾は wet 側だけで減衰させて流し切る。解析は bypass 中も動く。
+- **継承（`extends`）の規則**: 親の chain が子の chain の前に展開される。params・buses は名前でマージし、
+  子が同名を書いたら子が勝つ。master は**子が書いた時だけ置き換え**（書かなければ親のもの）。io は子の宣言が勝つ
+  （mono→stereo へ広げるのは可、逆は拒否）。`extends` の深さは 2 まで、循環は拒否。
+- 資源の上限（validate が拒否）: ノード 64 個、bus 8 本、1 ノードの帯域 8 段、YAML 64 KB、param 64 個。
 - param の型: `f32`, `bool`, `enum`（例: `type: enum, values: [kepler, fluent, ...]`）。
   範囲外は validate で拒否、`range` は必須（遅延線の確保量の根拠になる）。
 - `animate`: `duration`（秒）と `ease`（linear / ease_in / ease_out / ease_in_out）。
@@ -295,10 +308,14 @@ presets: [ kepler, luna, fluent, kitt, hal, gargantua, aurora, system, comic ]  
 crossfade: { duration: 0.3, ease: ease_in_out }   # 切替は等パワーのクロスフェード（両方を 300 ms だけ並走）
 ```
 
-Graph はバンクの全プリセットを compile 時に構築し（メモリは合計で数 MB 以下: 一番大きい reverb の
-遅延線でも 48 kHz で 8 線 × 最大 6 万サンプル × 4 B ≈ 1.9 MB）、`fa_select(inst, "fluent")` で切り替える。
-切替中は 2 プリセット分の CPU を使うので、予算は「最大 2 つ同時」で見積もる。
-リバーブの尾は旧プリセット側で自然に減衰させる（ブツ切りにしない）。
+Graph はバンクの全プリセットを compile 時に構築し（メモリは §3.6 のとおり合計 2 MB 程度）、
+`fa_select(inst, "fluent")`（RT 側は番号の `fa_select_idx`）で切り替える。
+
+切替の規則:
+- 新プリセットの声（dry + chain）は 300 ms の**線形**クロスフェードで入れ替える（同じ声なので相関が高い）。
+- 旧プリセットは**入力を止めて**走り続け、bus の尾だけが自然に減衰する（最長 2 s、または `tail` が -60 dB 未満で停止）。
+- 同時に走るのは**最大 2 つ**。尾の途中でさらに切り替えたら、一番古い尾を 50 ms でフェードアウトして止める。
+- 最後の保護（limiter）は**バンクの合計の後**に1つだけ置く（各プリセットの master の limiter は、バンクの中では外す）。
 
 ### 5.3 C API（fluent_scene の `fs_*` と同じ形）
 
@@ -318,12 +335,18 @@ int         fa_process(FaInstance*, int frames);      // RT 安全。1 = ok
 int fa_set_param_f32(FaInstance*, const char* name, float v);   // 非 RT スレッド用（名前解決あり）
 int fa_set_param_bool(FaInstance*, const char* name, int v);
 int fa_param_index(FaInstance*, const char* name);              // 事前に番号を引く
-int fa_set_param_idx(FaInstance*, int index, float v);          // RT 安全版
+int fa_set_param_idx(FaInstance*, int index, float v);          // RT 安全版（次の制御刻みで適用）
+int fa_set_param_at(FaInstance*, int index, float v, uint64_t frame);  // サンプル時刻付き（決定的）
 int fa_select(FaInstance*, const char* preset);                 // バンク内の切替（クロスフェード）
+int fa_preset_index(FaInstance*, const char* preset);
+int fa_select_idx(FaInstance*, int index);                      // RT 安全版
+int fa_bypass(FaInstance*, int on);                             // 完全な素通し（20 ms フェード、尾は流し切る）
+void fa_reset(FaInstance*);                                     // 状態を捨てる（尾も消える。無音時に使う）
 
 // 解析（§6）と診断
-const float* fa_analysis(FaInstance*);             // 最新ブロックの FaAnalysis（固定レイアウト）
-const char*  fa_diagnostics(FaInstance*);          // 直前の setter が 0 を返した理由（読むと空になる）
+const FaAnalysis* fa_analysis(FaInstance*);        // 最新の解析（版番号つき固定レイアウト）
+int          fa_diagnostics_count(FaInstance*);    // RT 側で数えた警告（遅着イベント・NaN reset・キュー溢れ）。数値だけ
+const char*  fa_diagnostics(FaInstance*);          // 直前の setter が 0 を返した理由（非 RT。読むと空になる）
 const char*  fa_drain_events(FaInstance*);         // onset / tail_end などのイベント（非 RT で読む）
 ```
 
@@ -331,7 +354,8 @@ C++ 側（`namespace fluent_audio`）:
 
 ```cpp
 auto parsed   = fluent_audio::sound::parse(yaml);       // 誤りは全部ここで拒否
-auto compiled = fluent_audio::sound::compile(parsed.doc, {.sample_rate = 48000});
+fluent_audio::CompileOptions opt;  opt.sample_rate = 48000;  opt.max_block = 128;
+auto compiled = fluent_audio::sound::compile(parsed.doc, opt);
 Graph& g = *compiled.graph;
 g.setParam("shimmer", 0.15f);                            // animate で効く
 g.process(in, out, frames);                              // RT 安全
@@ -347,16 +371,22 @@ const Analysis& a = g.analysis();
 
 | 値 | 定義 | 用途 |
 |---|---|---|
-| `level` | RMS（10 ms 窓）を dBFS → 0–1 に写像（-60 dB=0、-6 dB=1）、attack 5 ms / release 120 ms | 口・発光の大きさ（今の level の置き換え） |
+| `voice` | **声の入力**（voice_base の後・色付けの前）の RMS 包絡（10 ms 窓）を dBFS → 0–1（-60 dB=0、-6 dB=1）、attack 5 ms / release 120 ms。UI 音やリバーブを含まない | **口**（今の level の置き換え）。尾でパクパクしない |
+| `level` | **出口**（master の後）の同じ包絡。UI 音・残響を含む | 発光・オーラの大きさ |
 | `peak` | ブロック内の最大絶対値 | クリップ監視 |
 | `onset` | 包絡の対数微分がしきい値を越えた瞬間（音節の頭）。不応期 60 ms | 口のパク、粒の発生 |
 | `centroid` | スペクトル重心 Hz（256 点 FFT、2 ブロックごと）→ 0–1（300 Hz–5 kHz の対数） | 明るさ → 顔の色温度・きらめき |
-| `voiced` | level > しきい値 かつ 重心が声の範囲 | 「話している」判定 |
-| `tail` | 出力が -60 dBFS 未満に落ちるまでの残響中フラグ | 「自分の声が鳴っている」判定をリバーブの尾まで延ばす（§13.4 マイクの自己聴取対策） |
+| `tail` | 出口が -60 dBFS を下回ってから 100 ms 続くまで 1（ヒステリシス: -54 dB で再び 1） | 「まだ自分の音が鳴っている」の目安（§13.4）。エコーキャンセルではない |
 
-- 固定レイアウトの `struct FaAnalysis { float level, peak, onset, centroid, voiced, tail; uint32 frame; }`。
-- 送る頻度 ~94 Hz（4 ブロック）。顔のフレームに合わせる時は `AudioContext.outputLatency`
-  （取れない Safari では `baseLatency` + 10 ms の推定）だけ**解析を遅らせて**描く → 口と音が合う。
+- 「声が出ているか（VAD）」の判定は持たない（`voice` の大きさで足りる。本当の VAD は fv_audio_vad の仕事）。
+- 版番号つき固定レイアウト `struct FaAnalysis { uint32 version; uint32 size; uint64 frame; float voice, level, peak, onset, centroid, tail; }`。
+  `frame` はその値を計算した最後のサンプルの絶対番号。`peak` だけはブロックの区切りに依存するので
+  チャンク不変の対象外と明記する。
+- 送る頻度は画面に合わせて ~60 Hz。**口と音を合わせる**: worklet が `frame` を付けて送り、メインスレッドは
+  `AudioContext.getOutputTimestamp()`（contextTime と performanceTime の対応）で「そのサンプルが
+  スピーカーから出る時刻」に変換し、描画時刻に一番近い値を使う（遅延の二重計上をしない）。
+  getOutputTimestamp が無い / 0 を返す端末では `outputLatency`、それも無ければ `baseLatency` を使う
+  （これは較正していない目安で、端末ごとに目で合わせる値を設定に持つ）。
 - fluent_scene の `$params.level` / `speak` に直結できる（Liquid の level と同じ意味）。
 
 ---
@@ -369,21 +399,24 @@ const Analysis& a = g.analysis();
 
 | look | 狙い | 中身（chain / buses） | 試作 |
 |---|---|---|---|
-| **kepler** | いつもの声を「少しだけ良く」。きれい＋空気 | peak 3.2 kHz +1.5 / highshelf 10 kHz +2.5 / exciter 4.5 kHz 0.08 / 小部屋 reverb 0.5 s を -31 dB | ✓ |
-| **luna** | ルナ自身の声（Qwen3）。**素のまま** | voice_base だけ（+ limiter）。効果なし | – |
-| **fluent** | 柔らかい液体。きらめき | 上の §5.1 の例そのもの（コーラス 3 声・幅 1.3・室 1.6 s・1 オクターブ上のシマー -22 dB） | ✓ |
+| **kepler** | いつもの声を「少しだけ良く」。きれい＋空気 | peak 3.2 kHz +1.5 / highshelf 10 kHz +2.5 / exciter 4.5 kHz 0.08 / 小部屋 reverb 0.5 s（wet は dry 比 -31 dB*） | ✓ |
+| **luna** | ルナ自身の声（Qwen3）。**色付けなし** | voice_base だけ（低域カット・レベル整え・歯擦音）+ limiter。キャラの効果は掛けない | – |
+| **fluent** | 柔らかい液体。きらめき | 上の §5.1 の例そのもの（コーラス 3 声・幅 1.3・室 1.6 s（-22 dB*）・1 オクターブ上のシマー（-22 dB*）） | ✓ |
 | **kitt** | 車載コンピュータ。無線の帯域＋軽い歪み | radio（220 Hz–6 kHz、1.4 kHz +3）/ saturate 1.8 mix 0.6 / ringmod 55 Hz 0.05 / 車内の短い反射 0.35 s | ✓ |
 | **hal** | 落ち着いた、暖かい、近い。冷たくしない | lowshelf 200 Hz +1.5 / peak 3 kHz -1（耳当たりを丸く）/ highshelf 9 kHz -1 / doubler なし / 小部屋 0.7 s を -26 dB / compressor をもう少し深く（3:1）で「近接効果」 | – |
-| **gargantua** | 深宇宙。遠くまで伸びる暗い残響を**薄く** | lowshelf 160 Hz +2 / 暗い大空間 reverb 5.5 s（damp 3.5 kHz、predelay 60 ms）を -17 dB / 1 オクターブ下のシマー 6 s を薄く | ✓ |
-| **aurora** | 夜空の光のカーテン。高く透明 | highshelf 8 kHz +3 / chorus 2 声 0.12 Hz / シマー +12 と +19（5 度上）を交互に薄く / reverb 2.2 s 明るめ（damp 10 kHz） | – |
+| **gargantua** | 深宇宙。遠くまで伸びる暗い残響を**薄く** | lowshelf 160 Hz +2 / 暗い大空間 reverb 5.5 s（damp 3.5 kHz、predelay 60 ms、-17 dB*）/ 1 オクターブ下のシマー 6 s を薄く | ✓ |
+| **aurora** | 夜空の光のカーテン。高く透明 | highshelf 8 kHz +3 / chorus 2 声 0.12 Hz / シマー +12（オクターブ）と +19（その 5 度上）を同時に、オクターブを強めに薄く / reverb 2.2 s 明るめ（damp 10 kHz） | – |
 | **system** / **comic** | 未定。当面 kepler と同じ | `extends: kepler` | – |
+
+\* dB は send の値ではなく、**試作で測った wet のエネルギーの dry 比**（send 0.05 × reverb の利得 = -31 dB 等）。
+本番では YAML に `wet_db:` で書けるようにし、reverb の内部利得の違いに左右されないようにする（M2）。
 
 試作（✓）は numpy の sketch で作った（`sketch/render.py`、§12）。試聴: `media/faudio.view.json`。
 各 YAML は `presets/*.yaml` に置いた（v1alpha1 の書き方の見本を兼ねる）。
 
 look 以外の param（全プリセットが持つ）:
-`amount`（効きの強さ 0–1、設定画面のスライダーにする）、`speak` / `think`（顔と同じ気分の重み —
-例: fluent は think 中に shimmer を少し上げる、程度の**ごく小さな**連動に留める）。
+`amount`（効きの強さ 0–1、設定画面のスライダーにする）、`speak` / `think`（顔と同じ気分の重み。voice_base で宣言。
+例: fluent は think 中に shimmer を少し上げる、程度の**ごく小さな**連動に留める。v1 のプリセットではまだどこにも束縛しない）。
 
 ---
 
@@ -391,12 +424,13 @@ look 以外の param（全プリセットが持つ）:
 
 fluent_scene のデザインリンターに相当する **サウンドリンター** を validate に入れる:
 
-1. **明瞭度**: 声の帯域（300 Hz–4 kHz）の dry 成分が、どの param の組でも wet より 10 dB 以上大きい
-   （STI の簡易代理。リバーブで言葉を濁さない）。
+1. **明瞭度（目安）**: 声の帯域（300 Hz–4 kHz）で、試験用の朗読を通した時の wet（bus の合計）のエネルギーが
+   dry より 10 dB 以上小さい。STI の代わりにはならない経験則で、warning に留める。
 2. **耳当たり**: 2–5 kHz を合計で +4 dB 以上持ち上げたら warning（刺さる帯域）。
 3. **ピッチ**: dry 経路にピッチを変えるノードを置いたら warning（声のキャラが変わる。`allow_pitch: true`）。
 4. **モノ互換**: L+R を足した時の loudness 低下が 1.5 LU 以内（Tesla の車内・iPhone のスピーカーは実質モノ）。
-5. **音量**: プリセット間の integrated loudness 差 ±1 LU（look を変えて声が大きくなる/小さくなるのを防ぐ）。
+5. **音量**: 試験用の朗読コーパス（男女・速さ違い 10 本）で、プリセット間の integrated loudness 差 ±1 LU
+   （look を変えて声が大きくなる/小さくなるのを防ぐ。任意の声で保証するものではない）。
 6. **遅延**: `latency_samples > 0` は warning（D3）。
 7. **ring-mod / bitcrush の mix 上限**: range で 0.15 まで（ギミック化の防止）。
 
@@ -406,19 +440,21 @@ fluent_scene のデザインリンターに相当する **サウンドリンタ�
 
 | 種類 | 中身 | 合格基準 |
 |---|---|---|
-| **golden（オフライン）** | 固定入力（インパルス、対数スイープ、ピンクノイズのバースト、無音→音→無音、CC0 の朗読 10 s と Kepler の声）× 全ノード × 全プリセット × {44.1k, 48k} → `tests/golden/*.wav`（float32） | **null テスト**: 差分の RMS ≤ -100 dBFS、最大 ≤ -90 dBFS。golden の更新は fluent_scene と同じく理由付きのコミットだけ |
-| **native ↔ wasm** | 同じ入力を native と wasm（node で実行）で処理 | **ビット一致**を目標（D8）。許容は max\|Δ\| ≤ 2⁻²⁴（-144 dB） |
-| **チャンク不変** | 同じ入力を 128 固定 / 1〜512 のランダム長で process | ビット一致（D4） |
+| **golden（オフライン）** | 固定入力（インパルス、対数スイープ、ピンクノイズのバースト、無音→音→無音、CC0 の朗読）× 全ノード × 全プリセット × {44.1k, 48k} → `tests/golden/*.wav`（float32） | **null テスト**: 差分の RMS ≤ -100 dBFS、最大 ≤ -90 dBFS（コンパイラの版替えを許すための許容。同じビルドの native↔wasm は下のとおり許容なし）。golden の更新は fluent_scene と同じく理由付きのコミットだけ。加えて周波数特性・減衰時間（RT60）・エイリアス量を数値で検査 |
+| **native ↔ wasm** | 同じ入力 PCM・SR・初期状態・時刻付きイベント列を native（x86-64 / aarch64）と wasm（node で実行）で処理 | **ビット一致**（D8）。ここは許容差なし — ずれたら §3.5 の数値規則の破れとしてバグ扱い |
+| **チャンク不変** | 同じ入力と**同じ時刻付きイベント列**を 128 固定 / 1〜512 のランダム長で process | ビット一致（D4。`peak` 以外の解析値も） |
 | **RT 安全** | `operator new` / `malloc` のフック、mutex のフック | process 中 0 回 |
-| **denormal** | インパルスの後に無音 120 s | ブロックあたりの処理時間が最初と最後で同じ（±10%） |
-| **param ファズ** | ランダムな時刻に全 param をランダム値で setParam | NaN / Inf なし、サンプル間の差分が 0.3 を超えない（クリックなし） |
+| **denormal** | インパルスの後に無音 120 s | 全状態変数が有限時間で正確に 0 になる（値を直接検査）。処理時間はベンチ側で別に見る |
+| **安定性** | 全ノードの param の端の組み合わせ（FDN の decay 最大 × 変調最大 等）で 60 s | 出力が有界、尾が減衰して 0 に着く |
+| **param ファズ** | ランダムな時刻に全 param をランダム値で setParam | NaN / Inf なし。クリック検出 = 同じ入力を「param を滑らかに動かした参照」と比べ、差分の 8 kHz 以上のエネルギーが一瞬だけ跳ねないこと |
+| **ブラウザ実機** | ベンチページで Chrome / Safari / Tesla / iPhone。GC を起こすページ負荷を掛けながら 10 分再生 | 途切れ 0（`AudioContext` の underrun 統計がある所はそれ、無ければ録音して検出） |
 | **品質（§8）** | loudness（ITU-R BS.1770 を自前実装）、モノ互換、明瞭度 | §8 の数値 |
 | **ベンチ** | ノード別・プリセット別の ns / block。farm3（x86）、Mac、node の wasm、ブラウザのベンチページ（Chrome / Safari / Tesla / iPhone） | §3.6 の 5% 予算。CI で 20% 以上の悪化は fail |
 | **主観（記録）** | 新プリセットは A/B（dry との）を試聴ページに追加し、オーナーの OK を記録 | — |
 
 TTS の声のライセンス: AivisSpeech のモデルは利用規約がモデルごとに違う。golden に入れる
-声は **自分たちで録る CC0 の朗読**か、規約で再配布が許されたモデルの出力に限る（Kepler の
-声のクリップはローカルの主観テストにだけ使い、リポジトリに入れない）。
+声は **自分たちで録る CC0 の朗読**か、規約で再配布が許されたものに限る（Kepler の
+声のクリップはローカルの主観テストにだけ使い、リポジトリに入れない）。試験音源の出典と許諾は THIRD_PARTY.md に記録する。
 
 ---
 
@@ -444,6 +480,15 @@ TTS の声のライセンス: AivisSpeech のモデルは利用規約がモデ�
 | SoundTouch | LGPL-2.1 | **使わない**（wasm への静的リンクで LGPL の再リンク義務が面倒） |
 | KFR | GPL / 商用 | **使わない** |
 | RNNoise | BSD-3 | v1 では不要（ノイズ除去は TTS には要らない）。マイク経路を扱う時の候補 |
+
+補足:
+- 「依存ゼロ」は **DSP コアの話**。native の I/O（miniaudio）、Python（nanobind）、ビルド（Emscripten）は周辺の依存。
+- 「参考にする」は**論文・公開された解説を読んで自分で書く**意味で、コードは写さない。写した・改変した物が出たら
+  上流のリビジョン・ライセンス文・必要な表記を THIRD_PARTY.md に記録する。同梱する物は版を固定する。
+- Faust は「生成コード＝GPL」ではない（元の .dsp と使ったライブラリ・architecture ファイルのライセンスを継ぐ）。
+  ただし標準ライブラリに GPL / LGPL / STK が混在し、監査の手間に見合わないので使わない、という判断。
+- 自前実装は著作権の問題を避けるが、特許の確認にはならない。v1 のアルゴリズム（biquad、FDN、Doppler 型ピッチ、
+  ADAA、M/S）はいずれも古く公知だが、v2 で新しい手法（formant 保持ピッチ等）を入れる時は個別に確認する。
 
 `THIRD_PARTY.md` を fluent_scene と同じ形で最初から置く。
 
@@ -514,18 +559,26 @@ AudioBufferSourceNode(文) ─▶ AudioWorkletNode('fluent-audio') ─▶ destin
   サーバで native の fluent_audio を掛ける: voice.json に `"fa_preset": "kitt"` を書けば
   `post_filter` が ffmpeg の代わりに（または後に）`fa-render` / Python バインディングを呼ぶ。
 - **二重掛けの防止**: サーバで掛けた WAV にはレスポンスヘッダ `X-FA-Applied: <preset>@<digest>` を付け、
-  ページはそれを見たら worklet を `amount 0`（素通し）にする。
+  ページはそれを見たら**その文だけ** worklet を `fa_bypass`（limiter も外す完全な素通し）にする。
+  `/api/tts` は同一オリジンなので CORS の expose は不要（別オリジンから取る時は `Access-Control-Expose-Headers` に足す）。
+  掛けた文と掛けていない文が続く時は、bypass の切替を文の境目（無音）で行い、前の文の尾は流し切る。
 
 ### 13.4 気をつけること
 
 - **自分の声を自分で聞く問題**: agent-ext.js はマイクの言葉を「自分の声が鳴っている間」は捨てている。
-  リバーブの尾（gargantua で最大 ~1.5 s 聞こえる）の間もマイクに声が入るので、
-  `speaking` の終わりを `analysis.tail` が落ちるまで延ばす（上限 1.5 s）。
-- **iPhone Safari**: AudioContext は tap で resume（tts.js が既にやっている）。消音スイッチで Web Audio が
-  黙る問題は `navigator.audioSession.type = "playback"`（Safari 17+）で回避できる — 今と同じ挙動に
-  するかはオーナー判断（§15）。`audioWorklet.addModule` は secure context が要る（Kepler は https / localhost で OK）。
-- **Tesla**: Chromium だが CPU が弱め。ベンチページで 5% 予算を実測してから既定オンにする。
-- **バックグラウンドのタブ**: worklet は止まり得る。復帰時に Graph の状態を `reset()`（尾の残りを捨てる）。
+  リバーブの尾（gargantua で最大 ~1.5 s 聞こえる）の間もマイクに声が入り得るので、
+  「自分の音が鳴っている」の判定を `analysis.tail` が落ちるまで延ばす（ヒステリシス付き、上限 1.5 s）。
+  これはエコーキャンセルではなく目安。ブラウザの echoCancellation が尾をどこまで消すかは実機で確かめる。
+- **iPhone Safari**: AudioContext は tap で resume（tts.js が既にやっている）。電話・Siri・イヤホン抜けで
+  `interrupted` になり得るので、状態変化を見て次の tap で resume する。消音スイッチで Web Audio が黙る件は
+  `navigator.audioSession`（ある時だけ。機能検出する）で `playback` にすれば鳴る — するかはオーナー判断（§15）。
+  `audioWorklet.addModule` は secure context が要る（Kepler は https / localhost で OK）。
+  **CSP**: worklet のスクリプトと wasm を同一オリジンから出し、CSP を足す時は `script-src` に `'wasm-unsafe-eval'` が要る。
+  Kepler の顔は iframe なので、音を iframe の中で鳴らす時は `allow="autoplay"` が要る（今は親ページで鳴らすので不要）。
+- **Tesla**: Chromium だが版と CPU は車種・ソフトの版で違う。対応は「実機で測った版の表」で管理し、
+  ベンチページで 5% 予算を満たした版だけ既定オンにする。
+- **出力先の変化**（AirPods の接続など）で sampleRate が変わることは無い（AudioContext の SR は固定）が、
+  出力遅延は変わる → 口合わせは毎回 getOutputTimestamp から計算する（§6）。
 
 ---
 
@@ -533,9 +586,9 @@ AudioBufferSourceNode(文) ─▶ AudioWorkletNode('fluent-audio') ─▶ destin
 
 | M | 中身 | 完了の定義 |
 |---|---|---|
-| **M1** | C++ コア（Graph、param + animate、制御レート、denormal 対策、自前の数学近似）+ **5 ノード**（eq, compressor, deesser, reverb, limiter）+ Sound YAML（chain / buses / master）+ wasm worklet + Kepler の tts.js に機能フラグ付きで接続 + level 解析で顔を駆動 | golden（native）と native↔wasm 一致と RT 安全テストが緑。iPhone / Mac / Tesla で kepler プリセットが鳴り、顔が動く |
-| **M2** | 残りのノード（exciter, saturate, chorus, doubler, widen, shimmer, ringmod, formant, radio, bitcrush, gate, duck, meter 全項目）+ **全 look のプリセットとバンク切替（クロスフェード）**+ サウンドリンター + UI 音のダッキング | 全プリセットの golden と §8 の品質テストが緑。オーナーが試聴ページで各 look を OK |
-| **M3** | native の `fa-render` / `fa-play`（miniaudio）+ server.py の `fa_preset` + `X-FA-Applied` + G2 / ファイル書き出しの経路 | サーバで掛けた音とブラウザで掛けた音がビット一致（同じ SR で） |
+| **M1** | C++ コア（Graph、param + animate、時刻付きイベント、制御レート、denormal / NaN 対策、自前の数学近似）+ **5 ノード**（eq, compressor, exciter, reverb, limiter）+ Sound YAML（chain / buses / master / extends）+ wasm worklet（握手・フォールバック込み）+ Kepler の tts.js に機能フラグ付きで接続 + `voice` / `level` 解析で顔を駆動。M1 の kepler プリセットは de-esser 抜き（compressor で代用、TTS の歯擦音は穏やか） | golden（native）と native↔wasm ビット一致と RT 安全テストが緑。iPhone / Mac / Tesla で kepler プリセットが鳴り、顔が動く |
+| **M2** | 残りのノード（deesser, saturate, chorus, doubler, widen, shimmer, ringmod, formant, radio, bitcrush, gate, duck, meter 全項目）+ **全 look のプリセットとバンク切替（クロスフェード・尾の流し切り）**+ bypass + サウンドリンター + UI 音のダッキング + `wet_db` | 全プリセットの golden と §8 の品質テストが緑。オーナーが試聴ページで各 look を OK |
+| **M3** | native の `fa-render` / `fa-play`（miniaudio）+ server.py の `fa_preset` + `X-FA-Applied` + G2 / ファイル書き出しの経路 | 同じ PCM・同じ SR を入れた時、サーバとブラウザ（wasm）の出力がビット一致。実際の経路どうし（変換器が違う）は loudness ±0.2 LU・スペクトル ±0.5 dB で比べる |
 | **M4** | Python バインディング（nanobind）+ プリセット調整ツール + ROS 2 ラッパ（fv_audio_output の前段に入るノード。ROS の param で `$params` を動かす） | `pip install` で使える。ROS ノードが fv_audio_output と繋がる |
 
 M1 の見積もり: コア + 5 ノード + YAML + worklet で集中して数日。M2 はノードが小さいので 1 ノード数時間 × 13。
