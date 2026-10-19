@@ -1,0 +1,17 @@
+# system (orbit) — the SYSTEM look's planets go round, so the voice turns too (the user: 「システムはフランジャーにしますか。
+# 回転してますし」): a slow jet-plane flange (one short modulated delay, 1-3 ms, mixed half in, a little stereo) over a light
+# airy hall. The dry is never delayed.
+schema: fluent.sound/v1alpha1
+name: system_flange
+extends: voice_base
+io: { in: mono, out: stereo }
+trim_db: 0
+chain:
+  - eq: { bands: [ { type: lowshelf, f: 220, gain_db: 1 }, { type: highshelf, f: 9000, gain_db: 1 } ] }
+  - send: { to: hall, gain: 0.12 }
+  - chorus: { voices: 1, rate_hz: 0.12, depth_ms: 1.4, base_ms: 1.6, mix: 0.5, spread: 0.35 }
+buses:
+  hall:
+    - eq: { bands: [ { type: hp, f: 300, q: 0.7 }, { type: lp, f: 4500, q: 0.7 } ] }
+    - reverb: { decay_s: 2.2, size: 1.5, damp_hz: 3500, predelay_ms: 50, diffusion: 0.8, mod: 0.4 }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }
