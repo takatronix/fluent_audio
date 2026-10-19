@@ -1,11 +1,12 @@
 # Stems of one gargantua preset on one line: full, voice path only (organ send 0), organ only (other sends 0, dry 0).
 # Prints organ/voice RMS during speech, organ level after the speech in 0.5 s steps, organ spectral peaks.
 # usage: stems.py <name> [line] [--param k=v ...]
-import subprocess, sys, numpy as np, scipy.io.wavfile as wf
+import os, subprocess, sys, numpy as np, scipy.io.wavfile as wf
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 name = sys.argv[1]; line = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith('--') else '4'
 extra = sys.argv[3:] if len(sys.argv) > 3 else []
-FA = '/home/vegetalia/fluent_audio/build/fa_render'; P = f'/home/vegetalia/fluent_audio/presets/gargantua_{name}.yaml'
-D = f'/home/vegetalia/fluent_audio/sketch/gargvoice/dry/l{line}.wav'
+FA = f'{ROOT}/build/fa_render'; P = f'{ROOT}/presets/gargantua_{name}.yaml'
+D = f'{ROOT}/sketch/gargvoice/dry/l{line}.wav'
 desc = subprocess.run([FA, '--describe', P], capture_output=True, text=True).stdout
 pnames = [l.split()[0] for l in desc.splitlines() if l.strip().startswith(f'gargantua_{name}.')]
 sends = [p for p in pnames if '.send' in p]

@@ -1,7 +1,7 @@
 # Per candidate (the server-like renders in out/<name>_l<i>.wav): spectral centroid and >5 kHz share during the
 # speech, S/M width, how long the tail rings after the last word (to -20/-40 dB re speech), click score.
-import sys, numpy as np, scipy.io.wavfile as wf, scipy.signal as ss
-O = '/home/vegetalia/fluent_audio/sketch/gargvoice/'
+import os, sys, numpy as np, scipy.io.wavfile as wf, scipy.signal as ss
+O = os.path.dirname(os.path.abspath(__file__)) + '/'
 def ld(p):
     sr, x = wf.read(p); x = x.astype(float) / 32768; return sr, (x if x.ndim > 1 else np.stack([x, x], 1))
 print(f"{'name':10s} cent  >5k%  <200%  S/M   tail-20 tail-40  click")
