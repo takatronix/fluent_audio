@@ -9,7 +9,7 @@ trim_db: 0
 chain:
   - eq: { bands: [ { type: lowshelf, f: 220, gain_db: 1 }, { type: highshelf, f: 9000, gain_db: 1 } ] }
   - send: { to: hall, gain: 0.12 }
-  - chorus: { voices: 1, rate_hz: 0.12, depth_ms: 1.4, base_ms: 1.6, mix: 0.5, spread: 0.35 }
+  - flanger: { rate_hz: 0.18, min_ms: 0.2, max_ms: 6, feedback: 0.8, mix: 0.5, stereo: 0.2, shape: 1 }   # the DJ jet (「もっとDJぽく」)
 buses:
   hall:
     - eq: { bands: [ { type: hp, f: 300, q: 0.7 }, { type: lp, f: 4500, q: 0.7 } ] }

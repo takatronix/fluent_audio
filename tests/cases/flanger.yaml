@@ -1,0 +1,5 @@
+# Golden case for the `flanger` node (tests/test_golden.cpp renders it; `fa_tests golden --update` writes the WAV).
+schema: fluent.sound/v1alpha1
+name: case_flanger
+chain:
+  - flanger: { amount: 0.3 }
