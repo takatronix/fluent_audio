@@ -3,7 +3,7 @@ schema: fluent.sound/v1alpha1
 name: fluent_water
 extends: voice_base
 io: { in: mono, out: stereo }
-trim_db: 0
+trim_db: 1.5        # loudness matched to fluent on Kepler's dry voice (fa_render --loudness)
 chain:
   - eq: { bands: [ { type: lowshelf, f: 220, gain_db: 1 },
                    { type: peak, f: 3600, q: 1.2, gain_db: -1.5 },

@@ -3,7 +3,7 @@ schema: fluent.sound/v1alpha1
 name: fluent_halo
 extends: voice_base
 io: { in: mono, out: stereo }
-trim_db: 0
+trim_db: -0.3        # loudness matched to fluent on Kepler's dry voice (fa_render --loudness)
 params:
   shimmer: { type: f32, default: 0.12, range: [0, 0.5], animate: { duration: 0.8, ease: ease_in_out } }
 chain:

@@ -79,6 +79,18 @@ Safety limiter: linked peak compressor + bounded soft clip. 0 latency.  (~12 ops
 | release_ms | ms | 5 … 1000 | 80 | yes | gain recovery |
 | lookahead_ms | ms | 0 … 0 | 0 | fixed | look-ahead (v2; must be 0 in v1) |
 
+## `microshift`
+
+Stereo detune doubler (L a few cents up, R down), mono in → stereo out. Dry not delayed.  (~30 ops/sample)
+
+| param | unit | range | default | runtime | |
+|---|---|---|---|---|---|
+| cents | ct | 0 … 50 | 9 | yes | detune of each voice (left up, right down) |
+| delay_ms | ms | 0 … 30 | 8 | yes | extra delay of the voices (right gets 1.3x) |
+| window_ms | ms | 10 … 60 | 30 | fixed | shifter sweep window (longer = smoother) |
+| mix |  | 0 … 1 | 0.3 | yes | level of the detuned voices added to the dry |
+| spread |  | 0 … 1 | 1 | yes | 1 = voices hard L/R, 0 = both centred |
+
 ## `mix`
 
 Wet/dry of the whole preset against its dry tap (linear).  (~2 ops/sample)
@@ -86,6 +98,20 @@ Wet/dry of the whole preset against its dry tap (linear).  (~2 ops/sample)
 | param | unit | range | default | runtime | |
 |---|---|---|---|---|---|
 | amount |  | 0 … 1 | 1 | yes | 0 = the dry tap, 1 = the whole effect |
+
+## `phaser`
+
+Slow stereo phaser (2-8 allpass stages, log sweep, feedback), mono in → stereo out.  (~40 ops/sample)
+
+| param | unit | range | default | runtime | |
+|---|---|---|---|---|---|
+| stages |  | 2 … 8 | 4 | fixed | allpass stages (notches = stages / 2) |
+| rate_hz | Hz | 0.01 … 5 | 0.15 | yes | sweep speed |
+| low_hz | Hz | 50 … 4000 | 300 | yes | bottom of the sweep |
+| high_hz | Hz | 200 … 16000 | 3000 | yes | top of the sweep |
+| feedback |  | 0 … 0.9 | 0.2 | yes | resonance of the notches |
+| depth |  | 0 … 1 | 0.5 | yes | 0 = dry, 1 = full notches |
+| stereo | turns | 0 … 0.5 | 0.25 | yes | right LFO phase offset |
 
 ## `pitch_shift`
 
