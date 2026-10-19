@@ -1,0 +1,20 @@
+# fluent (glass) — crystalline: a high octave sheen and a bright, well-modulated plate (no metallic ring), shimmering wide.
+schema: fluent.sound/v1alpha1
+name: fluent_glass
+extends: voice_base
+io: { in: mono, out: stereo }
+trim_db: 0
+chain:
+  - eq: { bands: [ { type: peak, f: 3400, q: 1.2, gain_db: -1.5 },
+                   { type: highshelf, f: 8000, gain_db: 2.5 } ] }
+  - compressor: { threshold_db: -20, ratio: 1.8, attack_ms: 20, release_ms: 200, knee_db: 8, makeup_db: 1 }
+  - send: { to: sheen, gain: 0.10 }
+  - send: { to: plate, gain: 0.08 }
+  - microshift: { cents: 11, delay_ms: 6, mix: 0.25 }
+buses:
+  sheen:
+    - shimmer: { semitones: 12, decay_s: 1.6, size: 0.8, damp_hz: 12000, predelay_ms: 25, hp_hz: 1500 }
+  plate:
+    - eq: { bands: [ { type: hp, f: 400, q: 0.7 } ] }
+    - reverb: { decay_s: 1.2, size: 0.6, damp_hz: 12000, predelay_ms: 8, diffusion: 0.8, mod: 0.7 }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

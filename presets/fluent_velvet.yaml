@@ -1,0 +1,18 @@
+# fluent (velvet) — warm, close, radio-quality polish: low-mid warmth, a smoothed top, glue, a faint room.
+schema: fluent.sound/v1alpha1
+name: fluent_velvet
+extends: voice_base
+io: { in: mono, out: stereo }
+trim_db: 0
+chain:
+  - eq: { bands: [ { type: lowshelf, f: 260, gain_db: 2 },
+                   { type: peak, f: 3200, q: 1.0, gain_db: -2 },
+                   { type: highshelf, f: 9000, gain_db: -1 } ] }
+  - saturate: { drive: 1.4, mix: 0.15 }
+  - compressor: { threshold_db: -22, ratio: 2.5, attack_ms: 15, release_ms: 120, knee_db: 8, makeup_db: 2 }
+  - send: { to: room, gain: 0.07 }
+  - microshift: { cents: 4, delay_ms: 7, mix: 0.12 }
+buses:
+  room:
+    - reverb: { decay_s: 0.5, size: 0.45, damp_hz: 6000, predelay_ms: 6, mod: 0.3 }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

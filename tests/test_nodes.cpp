@@ -139,3 +139,41 @@ FA_TEST(nodes, "eq: a 1 kHz +6 dB peak gives +6 dB at 1 kHz") {
     const double g = 10 * std::log10(so / si);
     CHECK(std::fabs(g - 6.0) < 0.1) << g;
 }
+
+FA_TEST(nodes, "microshift: mix 0 is the dry, undelayed; the left voice is detuned up by `cents`") {
+    std::vector<float> x(96000);
+    for (size_t i = 0; i < x.size(); ++i) x[i] = 0.1f * dsp::sinTurns(static_cast<float>(i % 48) / 48.0f);   // 1 kHz
+    auto d = fa_test::make("schema: fluent.sound/v1alpha1\nname: q\nchain:\n  - microshift: { mix: 0 }\n");
+    const auto y0 = fa_test::render(*d, x, 128);
+    bool same = true;
+    for (size_t i = 0; i < x.size(); ++i) same = same && y0[2 * i] == x[i] && y0[2 * i + 1] == x[i];
+    CHECK(same);
+    // wet only on the left: subtract the dry, count zero crossings of what is left
+    auto e = fa_test::make("schema: fluent.sound/v1alpha1\nname: q\nchain:\n  - microshift: { cents: 50, mix: 1, spread: 1 }\n");
+    const auto y = fa_test::render(*e, x, 128);
+    int zc = 0;
+    float prev = 0;
+    for (size_t i = 48000; i < 96000; ++i) {
+        const float w = y[2 * i] - x[i];
+        if (prev <= 0 && w > 0) ++zc;
+        prev = w;
+    }
+    CHECK(std::abs(zc - 1029) <= 3) << zc;   // 1000 Hz · 2^(50/1200)
+}
+
+FA_TEST(nodes, "phaser: depth 0 is the dry; depth 1 with a parked sweep cuts a notch") {
+    std::vector<float> x(48000);
+    for (size_t i = 0; i < x.size(); ++i) x[i] = 0.1f * dsp::sinTurns(static_cast<float>(i % 48) / 48.0f);   // 1 kHz
+    auto d = fa_test::make("schema: fluent.sound/v1alpha1\nname: q\nchain:\n  - phaser: { depth: 0 }\n");
+    const auto y0 = fa_test::render(*d, x, 128);
+    bool same = true;
+    for (size_t i = 0; i < x.size(); ++i) same = same && y0[2 * i] == x[i] && y0[2 * i + 1] == x[i];
+    CHECK(same);
+    // 2 stages at a fixed corner f: the allpass is -180° at f, so (x + ap)/2 nulls there
+    auto e = fa_test::make("schema: fluent.sound/v1alpha1\nname: q\nchain:\n"
+                           "  - phaser: { stages: 2, low_hz: 1000, high_hz: 1000, feedback: 0, depth: 1 }\n");
+    const auto y = fa_test::render(*e, x, 128);
+    double si = 0, so = 0;
+    for (size_t i = 24000; i < 48000; ++i) { si += x[i] * x[i]; so += y[2 * i] * y[2 * i]; }
+    CHECK(10 * std::log10(so / si) < -30) << 10 * std::log10(so / si);
+}

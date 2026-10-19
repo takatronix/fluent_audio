@@ -1,0 +1,22 @@
+# fluent (halo) — the warm voice kept close, with a very soft octave-up halo blooming behind it and a long smooth tail.
+schema: fluent.sound/v1alpha1
+name: fluent_halo
+extends: voice_base
+io: { in: mono, out: stereo }
+trim_db: 0
+params:
+  shimmer: { type: f32, default: 0.12, range: [0, 0.5], animate: { duration: 0.8, ease: ease_in_out } }
+chain:
+  - eq: { bands: [ { type: lowshelf, f: 240, gain_db: 1.5 },
+                   { type: peak, f: 3600, q: 1.2, gain_db: -1.5 },
+                   { type: highshelf, f: 10000, gain_db: 1 } ] }
+  - compressor: { threshold_db: -20, ratio: 1.8, attack_ms: 20, release_ms: 200, knee_db: 8, makeup_db: 1 }
+  - send: { to: room, gain: 0.08 }
+  - send: { to: halo, gain: $params.shimmer }
+  - microshift: { cents: 5, delay_ms: 10, mix: 0.15 }
+buses:
+  room:
+    - reverb: { decay_s: 1.4, size: 0.9, damp_hz: 6500, predelay_ms: 15, mod: 0.4 }
+  halo:
+    - shimmer: { semitones: 12, decay_s: 3.5, size: 1.4, damp_hz: 7000, predelay_ms: 60, hp_hz: 900 }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

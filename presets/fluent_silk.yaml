@@ -1,0 +1,18 @@
+# fluent (silk) — smooth and close: a stereo detune double (no vibrato, no comb), soft air, glue, a short soft plate.
+schema: fluent.sound/v1alpha1
+name: fluent_silk
+extends: voice_base
+io: { in: mono, out: stereo }
+trim_db: 0
+chain:
+  - eq: { bands: [ { type: lowshelf, f: 220, gain_db: 1 },
+                   { type: peak, f: 3600, q: 1.2, gain_db: -1.5 },
+                   { type: highshelf, f: 10000, gain_db: 2 } ] }
+  - compressor: { threshold_db: -20, ratio: 1.8, attack_ms: 20, release_ms: 200, knee_db: 8, makeup_db: 1 }
+  - send: { to: plate, gain: 0.12 }
+  - microshift: { cents: 8, delay_ms: 10, mix: 0.25 }
+buses:
+  plate:
+    - eq: { bands: [ { type: hp, f: 250, q: 0.7 } ] }
+    - reverb: { decay_s: 1.0, size: 0.55, damp_hz: 8000, predelay_ms: 12, diffusion: 0.75, mod: 0.35 }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }
