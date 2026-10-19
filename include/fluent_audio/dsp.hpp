@@ -16,11 +16,22 @@ constexpr double kPi = 3.14159265358979323846;
 constexpr double kLn2 = 0.69314718055994530942;
 constexpr double kLn10 = 2.30258509299404568402;
 
+// floor via truncation: exact for |x| < 2^31 (all our uses), and inline — with the SSE2 baseline std::floor is a
+// libm call (no roundss before SSE4.1), which made native slower than wasm (where floor is one instruction).
+inline double dfloor(double x) {
+    const double t = static_cast<double>(static_cast<int64_t>(x));
+    return t > x ? t - 1.0 : t;
+}
+inline float ffloor(float x) {
+    const float t = static_cast<float>(static_cast<int32_t>(x));
+    return t > x ? t - 1.0f : t;
+}
+
 // ---------------------------------------------------------------- double (coefficients, control rate)
 inline double dexp(double x) {
     if (x < -745.0) return 0.0;
     if (x > 709.0) x = 709.0;
-    const double k = std::floor(x * 1.44269504088896340736 + 0.5);
+    const double k = dfloor(x * 1.44269504088896340736 + 0.5);
     const double r = (x - k * 6.93147180369123816490e-01) - k * 1.90821492927058770002e-10;   // Cody-Waite
     double p = 1.0 / 479001600.0;                                                             // 1/12!
     const double inv[] = {39916800.0, 3628800.0, 362880.0, 40320.0, 5040.0, 720.0, 120.0, 24.0, 6.0, 2.0, 1.0, 1.0};
@@ -67,7 +78,7 @@ inline double dcos_core(double r) {   // |r| <= pi/4, Taylor to r^18
     return p;
 }
 inline void dsincos(double x, double& s, double& c) {
-    const double k = std::floor(x * 0.63661977236758134308 + 0.5);            // x / (pi/2)
+    const double k = dfloor(x * 0.63661977236758134308 + 0.5);            // x / (pi/2)
     const double r = (x - k * 1.57079632673412561417) - k * 6.07710050650619224932e-11;
     const double sr = dsin_core(r), cr = dcos_core(r);
     const int q = static_cast<int>(static_cast<int64_t>(k) & 3);
@@ -96,7 +107,7 @@ inline float clampf(float x, float lo, float hi) { return x < lo ? lo : (x > hi 
 
 // sin(2*pi*t) for any t (turns). |error| < 1e-7.
 inline float sinTurns(float t) {
-    t = t - std::floor(t + 0.5f);                      // [-0.5, 0.5)
+    t = t - ffloor(t + 0.5f);                      // [-0.5, 0.5)
     float x = t * 6.28318530717958647f;               // [-pi, pi)
     if (x > 1.57079632679f) x = 3.14159265359f - x;
     else if (x < -1.57079632679f) x = -3.14159265359f - x;
@@ -115,7 +126,7 @@ inline float fexp(float x) {
     if (x < -87.0f) return 0.0f;
     if (x > 87.0f) x = 87.0f;
     const float t = x * 1.44269504089f;
-    const float k = std::floor(t);
+    const float k = ffloor(t);
     const float f = (t - k) * 0.693147180560f;        // in [0, ln2)
     float p = 1.0f / 5040.0f;
     p = p * f + 1.0f / 720.0f;
@@ -255,14 +266,14 @@ struct DelayLine {
     // delay d >= 1: d = 1 is the sample pushed last.
     float tap(uint32_t d) const { return buf[(w - d) & mask]; }
     float linear(float d) const {
-        const float fl = std::floor(d);
+        const float fl = ffloor(d);
         const uint32_t i = static_cast<uint32_t>(fl);
         const float f = d - fl;
         const float a = tap(i), b = tap(i + 1);
         return a + (b - a) * f;
     }
     float hermite(float d) const {   // d >= 2
-        const float fl = std::floor(d);
+        const float fl = ffloor(d);
         const uint32_t i = static_cast<uint32_t>(fl);
         const float f = d - fl;
         const float xm1 = tap(i - 1), x0 = tap(i), x1 = tap(i + 1), x2 = tap(i + 2);

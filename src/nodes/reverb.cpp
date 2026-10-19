@@ -80,22 +80,26 @@ public:
         static const float kSr[N] = {1, 1, -1, -1, 1, 1, -1, -1};
         float* l = s.ch[0];
         float* r = s.ch[1];
+        // locals: stores into the delay lines (float*) could alias float members, which would force reloads
+        const float damp = damp_, diff = diff_;
+        float len[N], g[N], o0[N], od[N];
+        for (int j = 0; j < N; ++j) { len[j] = len_[j]; g[j] = g_[j]; o0[j] = off_prev_[j]; od[j] = off_[j] - off_prev_[j]; }
         for (int i = 0; i < s.n; ++i) {
             const float dl = l[i], dr = s.channels == 2 ? r[i] : l[i];
             float x = s.channels == 2 ? 0.5f * (dl + dr) : dl;
             if (pd_) { pre_.push(x); x = pre_.tap(pd_ + 1); }
             for (int k = 0; k < 4; ++k) {   // Schroeder allpasses: |H| = 1
                 const float d = ap_[k].tap(ap_len_[k]);
-                const float u = x + diff_ * d;
-                x = d - diff_ * u;
+                const float u = x + diff * d;
+                x = d - diff * u;
                 ap_[k].push(u);
             }
             const float k = static_cast<float>(s.pos + i + 1) * (1.0f / kControlRate);
             float y[N];
             float sum = 0;
             for (int j = 0; j < N; ++j) {
-                const float off = off_prev_[j] + (off_[j] - off_prev_[j]) * k;
-                y[j] = lp_[j].run(damp_, line_[j].linear(len_[j] - off)) * g_[j];
+                const float off = o0[j] + od[j] * k;
+                y[j] = lp_[j].run(damp, line_[j].linear(len[j] - off)) * g[j];
                 sum += y[j];
             }
             sum *= 2.0f / N;

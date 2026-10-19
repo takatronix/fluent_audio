@@ -43,7 +43,7 @@ public:
             x = lp_[1].run(lc_[1], lp_[0].run(lc_[0], x));
             line_.push(x);
             ph_ += dph_;
-            ph_ -= std::floor(ph_);
+            ph_ -= dsp::ffloor(ph_);
             float ph2 = ph_ + 0.5f;
             if (ph2 >= 1.0f) ph2 -= 1.0f;
             const float s1 = dsp::sinTurns(0.5f * ph_), s2 = dsp::sinTurns(0.5f * ph2);
