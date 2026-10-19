@@ -445,7 +445,7 @@ private:
             if (it != handle_idx_.end() && ps.smooth != Smooth::kFixed)
                 eng_->handles_[it->second].targets.push_back({nullptr, &node, slot, o.k, o.c});
         }
-        canon_ += " " + hname + "=" + fmt(value) + (v.bound() ? "@" + v.gparam : "");
+        if (v.bound()) node_binds_.push_back(hname + "@" + fmt(v.k) + "*" + v.gparam + "+" + fmt(v.num));
         return true;
     }
 
@@ -492,7 +492,8 @@ private:
                     if (!info->params[i].group && e.key == info->params[i].name) pi = i;
                 if (pi < 0) {
                     std::string list;
-                    for (int i = 0; i < info->nparams; ++i) list += std::string(list.empty() ? "" : ", ") + info->params[i].name;
+                    for (int i = 0; i < info->nparams; ++i)
+                        if (!info->params[i].group) list += std::string(list.empty() ? "" : ", ") + info->params[i].name;
                     if (group) list += std::string(", ") + group;
                     return err(file, e.key_span.begin_line, type + ": unknown param '" + e.key + "' (has: " + list + ")");
                 }
@@ -540,6 +541,11 @@ private:
                 if (!to || !to->isScalar()) return err(file, line, "send: needs to: <bus>");
                 sends_.push_back({node.get(), to->scalar, ch, file, line});
             }
+            // canonical form for the digest: slot values in table order, bindings sorted
+            for (int k = 0; k < node->slotCount(); ++k) canon_ += " " + fmt(node->slot(k).cur);
+            std::sort(node_binds_.begin(), node_binds_.end());
+            for (const auto& b : node_binds_) canon_ += " " + b;
+            node_binds_.clear();
             std::string perr;
             Prepare pr{opt_.sample_rate, ch, eng_->arena_, perr};
             node->prepare(pr);
@@ -766,6 +772,7 @@ private:
     std::map<std::string, Doc*> cache_;
     std::map<std::string, int> handle_idx_;
     std::string canon_;
+    std::vector<std::string> node_binds_;
     int node_count_ = 0;
 };
 
