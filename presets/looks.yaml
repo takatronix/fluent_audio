@@ -4,3 +4,4 @@ bank: kepler_looks
 presets: [ kepler, luna, fluent, kitt, hal, gargantua, aurora ]
 aliases: { system: kepler, comic: kepler }
 crossfade: { duration: 0.3, ease: ease_in_out }
+master: [ limiter: { ceiling_db: -1 } ]   # one safety limiter after the bank sum; presets' own limiters are dropped inside a bank
