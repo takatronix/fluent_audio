@@ -2,7 +2,7 @@
 # The page picks a preset from the look (mode.json: mode + material); looks without a sound of their own alias.
 schema: fluent.sound/v1alpha1
 bank: kepler_looks
-presets: [ kepler, kepler_space, system_flange, luna, fluent, fluent_metal, fluent_silk, fluent_water, fluent_halo, fluent_velvet, fluent_space, fluent_glass, kitt, hal, gargantua, gargantua_organ, gargantua_cathedral, gargantua_choir, gargantua_horizon, gargantua_tesseract ]
+presets: [ kepler, kepler_space, system_flange, brain_water, luna, fluent, fluent_metal, fluent_silk, fluent_water, fluent_halo, fluent_velvet, fluent_space, fluent_glass, kitt, hal, gargantua, gargantua_organ, gargantua_cathedral, gargantua_choir, gargantua_horizon, gargantua_tesseract ]
 aliases: { system: kepler, comic: kepler, liquid: fluent_metal, aurora: fluent, clean: luna }   # clean: levelling + limiter only
 crossfade: { duration: 0.3, ease: ease_in_out }
 master:

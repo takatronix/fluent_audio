@@ -1,0 +1,23 @@
+# brain (water) — the BRAIN IN A JAR speaks from inside the liquid (the user: 「脳みそのエフェクト、もっと水ぽく！！」):
+# a deep, slow 6-stage phaser sweeping like light and pressure through water, the top softened as if through glass and
+# fluid, a wavering double, a short wet jar resonance, a small lab behind. No added hiss (de-essed send, darker hall).
+schema: fluent.sound/v1alpha1
+name: brain_water
+extends: voice_base
+io: { in: mono, out: stereo }
+trim_db: 2
+chain:
+  - eq: { bands: [ { type: lowshelf, f: 240, gain_db: 2 },
+                   { type: peak, f: 900, q: 0.9, gain_db: 1.5 },
+                   { type: lp, f: 6000, q: 0.7 } ] }
+  - deesser: { freq: 6000, threshold_db: -40, ratio: 5 }
+  - compressor: { threshold_db: -20, ratio: 1.6, attack_ms: 20, release_ms: 200, knee_db: 8, makeup_db: 0 }
+  - send: { to: jar, gain: 0.2 }
+  - microshift: { cents: 12, delay_ms: 14, mix: 0.3 }
+  - phaser: { stages: 6, rate_hz: 0.22, low_hz: 250, high_hz: 2800, feedback: 0.55, depth: 0.8, stereo: 0.35 }
+  - chorus: { voices: 2, rate_hz: 0.6, depth_ms: 2.5, base_ms: 8, mix: 0.25, spread: 1, random: 0.6 }
+buses:
+  jar:
+    - eq: { bands: [ { type: hp, f: 250, q: 0.7 }, { type: lp, f: 3500, q: 0.7 } ] }
+    - reverb: { decay_s: 1.6, size: 0.8, damp_hz: 3000, predelay_ms: 12, diffusion: 0.85, mod: 0.6 }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }
