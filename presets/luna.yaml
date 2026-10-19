@@ -3,5 +3,6 @@ schema: fluent.sound/v1alpha1
 name: luna
 extends: voice_base
 io: { in: mono, out: stereo }
+trim_db: 0        # loudness matched to the dry voice (fa_render --loudness)
 chain: []
 analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

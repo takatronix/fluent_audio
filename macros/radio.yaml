@@ -1,0 +1,18 @@
+# radio — a band-limited "speaker" colour: high-pass + low-pass, a mid presence bump, then gentle drive.
+# Not as narrow as a telephone. A macro: a named sub-chain whose params map onto the inner nodes.
+schema: fluent.sound/v1alpha1
+macro: radio
+help: Band-limited radio colour (HP + LP + presence) with gentle ADAA saturation.
+params:
+  low_hz:      { default: 220,  range: [40, 1000],   unit: Hz }
+  high_hz:     { default: 6000, range: [2000, 16000], unit: Hz }
+  presence_hz: { default: 1400, range: [300, 5000],  unit: Hz }
+  presence_db: { default: 3,    range: [-12, 12],    unit: dB }
+  drive:       { default: 1.8,  range: [1, 10] }
+  mix:         { default: 0.6,  range: [0, 1] }
+chain:
+  - eq: { bands: [ { type: hp,   f: $low_hz,  q: 0.8 },
+                   { type: lp,   f: $high_hz, q: 0.8 },
+                   { type: peak, f: $presence_hz, q: 0.9, gain_db: $presence_db } ] }
+  - gain: { db: 3 }
+  - saturate: { drive: $drive, mix: $mix }

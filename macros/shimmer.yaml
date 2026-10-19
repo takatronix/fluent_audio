@@ -1,0 +1,17 @@
+# shimmer — the voice pitched (an octave up by default) into a reverb: a halo of light. Wet only; use it in a bus.
+# hp → pitch_shift → reverb (design §4). The reverb's params pass through.
+schema: fluent.sound/v1alpha1
+macro: shimmer
+help: Pitch-shifted reverb halo (hp → pitch_shift → reverb), for a bus.
+params:
+  semitones:   { default: 12,   range: [-24, 24],   unit: st }
+  hp_hz:       { default: 600,  range: [20, 4000],  unit: Hz }
+  decay_s:     { default: 2.8,  range: [0.1, 20],   unit: s }
+  size:        { default: 1.1,  range: [0.2, 2.5] }
+  damp_hz:     { default: 9000, range: [500, 20000], unit: Hz }
+  predelay_ms: { default: 40,   range: [0, 250],    unit: ms }
+  mix:         { default: 1,    range: [0, 1] }
+chain:
+  - eq: { bands: [ { type: hp, f: $hp_hz, q: 0.7 } ] }
+  - pitch_shift: { semitones: $semitones }
+  - reverb: { decay_s: $decay_s, size: $size, damp_hz: $damp_hz, predelay_ms: $predelay_ms, mix: $mix }

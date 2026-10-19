@@ -3,6 +3,7 @@ schema: fluent.sound/v1alpha1
 name: kitt
 extends: voice_base
 io: { in: mono, out: stereo }
+trim_db: 0.1        # loudness matched to the dry voice (fa_render --loudness)
 chain:
   - radio: { low_hz: 220, high_hz: 6000, presence_hz: 1400, presence_db: 3, drive: 1.8, mix: 0.6 }
   - eq: { bands: [ { type: peak, f: 350, q: 1.0, gain_db: -2 } ] }
@@ -10,5 +11,6 @@ chain:
   - compressor: { threshold_db: -22, ratio: 3, attack_ms: 3, release_ms: 80, makeup_db: 2 }
   - send: { to: cabin, gain: 0.06 }
 buses:
-  cabin: [ reverb: { decay_s: 0.35, size: 0.3, damp_hz: 5000, predelay_ms: 3 } ]
+  cabin:
+    - reverb: { decay_s: 0.35, size: 0.3, damp_hz: 5000, predelay_ms: 3 }
 analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

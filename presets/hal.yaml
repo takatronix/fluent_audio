@@ -3,12 +3,14 @@ schema: fluent.sound/v1alpha1
 name: hal
 extends: voice_base
 io: { in: mono, out: stereo }
+trim_db: -0.1        # loudness matched to the dry voice (fa_render --loudness)
 chain:
-  - eq: { bands: [ { type: lowshelf, f: 200, gain_db: 1.5 },
-                   { type: peak, f: 3000, q: 1.0, gain_db: -1 },
-                   { type: highshelf, f: 9000, gain_db: -1 } ] }
-  - compressor: { threshold_db: -26, ratio: 3, attack_ms: 15, release_ms: 200, makeup_db: 2 }
+  - eq: { bands: [ { type: lowshelf, f: 220, gain_db: 2 },
+                   { type: peak, f: 3000, q: 0.9, gain_db: -1.5 },
+                   { type: highshelf, f: 7000, gain_db: -2.5 } ] }
+  - compressor: { threshold_db: -16, ratio: 1.6, attack_ms: 25, release_ms: 300, knee_db: 10 }
   - send: { to: room, gain: 0.08 }
 buses:
-  room: [ reverb: { decay_s: 0.7, size: 0.5, damp_hz: 5500, predelay_ms: 8 } ]
+  room:
+    - reverb: { decay_s: 0.7, size: 0.5, damp_hz: 5500, predelay_ms: 8 }
 analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

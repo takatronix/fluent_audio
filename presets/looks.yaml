@@ -1,7 +1,9 @@
 # The bank Kepler loads: every look built once at start, switched with a crossfade (design §5.2).
+# The page picks a preset from the look (mode.json: mode + material); looks without a sound of their own alias.
 schema: fluent.sound/v1alpha1
 bank: kepler_looks
-presets: [ kepler, luna, fluent, kitt, hal, gargantua, aurora ]
-aliases: { system: kepler, comic: kepler }
+presets: [ kepler, luna, fluent, fluent_metal, kitt, hal, gargantua ]
+aliases: { system: kepler, comic: kepler, liquid: fluent_metal, aurora: fluent }
 crossfade: { duration: 0.3, ease: ease_in_out }
-master: [ limiter: { ceiling_db: -1 } ]   # one safety limiter after the bank sum; presets' own limiters are dropped inside a bank
+master:
+  - limiter: { ceiling_db: -1 }   # one safety limiter after the bank sum; presets' own limiters are dropped inside a bank

@@ -3,11 +3,13 @@ schema: fluent.sound/v1alpha1
 name: kepler
 extends: voice_base
 io: { in: mono, out: stereo }
+trim_db: -0.2        # loudness matched to the dry voice (fa_render --loudness)
 chain:
   - eq: { bands: [ { type: peak, f: 3200, q: 1.0, gain_db: 1.5 },
                    { type: highshelf, f: 10000, gain_db: 2.5 } ] }
   - exciter: { freq: 4500, drive: 2.0, mix: 0.08 }
   - send: { to: room, gain: 0.05 }
 buses:
-  room: [ reverb: { decay_s: 0.5, size: 0.45, damp_hz: 7000, predelay_ms: 6 } ]
+  room:
+    - reverb: { decay_s: 0.5, size: 0.45, damp_hz: 7000, predelay_ms: 6 }
 analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

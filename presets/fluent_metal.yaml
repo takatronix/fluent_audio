@@ -1,0 +1,12 @@
+# fluent (metal) — the same liquid, in liquid metal: a touch brighter and harder, a short bright plate that rings.
+schema: fluent.sound/v1alpha1
+name: fluent_metal
+extends: fluent
+trim_db: 1.3        # loudness matched to the dry voice (fa_render --loudness)
+chain:
+  - eq: { bands: [ { type: peak, f: 4200, q: 1.2, gain_db: 1 } ] }
+  - send: { to: plate, gain: 0.06 }
+buses:
+  plate:
+    - reverb: { decay_s: 0.9, size: 0.35, damp_hz: 14000, predelay_ms: 4, diffusion: 0.5, mod: 0.05 }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

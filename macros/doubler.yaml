@@ -1,0 +1,10 @@
+# doubler — one extra voice that wanders a little in time (smoothed random, not a sine): a "two takes" thickness.
+schema: fluent.sound/v1alpha1
+macro: doubler
+help: One randomly wandering delayed voice (8–25 ms) — a natural double, mono in → stereo out.
+params:
+  delay_ms: { default: 15,   range: [5, 25],  unit: ms }
+  wobble:   { default: 0.3,  range: [0, 1] }
+  mix:      { default: 0.25, range: [0, 1] }
+chain:
+  - chorus: { voices: 1, base_ms: $delay_ms, depth_ms: $wobble * 6, rate_hz: 0.3, random: 1, mix: $mix, spread: 0 }
