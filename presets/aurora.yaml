@@ -15,4 +15,4 @@ buses:
   room:   [ reverb: { decay_s: 2.2, size: 0.9, damp_hz: 10000, predelay_ms: 20 } ]
   octave: [ shimmer: { semitones: 12, decay_s: 3.0, hp_hz: 700, mix: 1 } ]
   fifth:  [ shimmer: { semitones: 19, decay_s: 3.5, hp_hz: 900, mix: 1 } ]
-analysis: { level: true, onset: true, centroid: true, tail: true }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

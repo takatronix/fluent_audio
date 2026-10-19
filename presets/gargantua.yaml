@@ -14,4 +14,4 @@ chain:
 buses:
   space: [ reverb: { decay_s: 5.5, size: 1.6, damp_hz: 3500, predelay_ms: 60 } ]
   deep:  [ shimmer: { semitones: -12, decay_s: 6.0, size: 1.8, damp_hz: 2500, predelay_ms: 90, hp_hz: 400, mix: 1 } ]
-analysis: { level: true, onset: true, centroid: true, tail: true }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

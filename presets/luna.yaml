@@ -4,4 +4,4 @@ name: luna
 extends: voice_base
 io: { in: mono, out: stereo }
 chain: []
-analysis: { level: true, onset: true, centroid: true, tail: true }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

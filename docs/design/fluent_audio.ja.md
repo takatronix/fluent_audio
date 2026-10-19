@@ -274,7 +274,7 @@ master:
   - mix: { amount: $params.amount }        # 0 = dry、1 = このプリセットそのもの（全経路の wet/dry）
   - limiter: { ceiling_db: -1 }
 
-analysis: { level: true, onset: true, centroid: true, tail: true, rate_hz: 94 }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true, rate_hz: 60 }
 ```
 
 規則:
@@ -305,7 +305,7 @@ analysis: { level: true, onset: true, centroid: true, tail: true, rate_hz: 94 }
 schema: fluent.sound/v1alpha1
 bank: kepler_looks
 presets: [ kepler, luna, fluent, kitt, hal, gargantua, aurora, system, comic ]   # ファイル名 = presets/<name>.yaml
-crossfade: { duration: 0.3, ease: ease_in_out }   # 切替は等パワーのクロスフェード（両方を 300 ms だけ並走）
+crossfade: { duration: 0.3, ease: ease_in_out }   # 声は線形クロスフェード、旧プリセットの尾は流し切る（下の規則）
 ```
 
 Graph はバンクの全プリセットを compile 時に構築し（メモリは §3.6 のとおり合計 2 MB 程度）、

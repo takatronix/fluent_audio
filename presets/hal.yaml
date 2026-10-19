@@ -11,4 +11,4 @@ chain:
   - send: { to: room, gain: 0.08 }
 buses:
   room: [ reverb: { decay_s: 0.7, size: 0.5, damp_hz: 5500, predelay_ms: 8 } ]
-analysis: { level: true, onset: true, centroid: true, tail: true }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }

@@ -17,4 +17,4 @@ chain:
 buses:
   room:    [ reverb: { decay_s: 1.6, size: 0.8, damp_hz: 8000, predelay_ms: 18 } ]
   shimmer: [ shimmer: { semitones: 12, decay_s: 2.8, size: 1.1, damp_hz: 9000, predelay_ms: 40, hp_hz: 600, mix: 1 } ]
-analysis: { level: true, onset: true, centroid: true, tail: true }
+analysis: { voice: true, level: true, onset: true, centroid: true, tail: true }
